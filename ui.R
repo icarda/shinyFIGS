@@ -7,6 +7,18 @@ library(bslib)
 library(bsicons)
 library(foreach)
 library(doParallel)
+library(dplyr)
+library(plotly)
+library(reactable)
+library(htmltools)
+library(icardaFIGSr)
+library(ggplot2)
+library(viridis)
+library(scales)
+library(stringr)
+library(crosstalk)
+library(DT)
+
 
 # Load functions
 source(file.path('./functions/functions.R'), local = TRUE)
@@ -275,14 +287,32 @@ trait_accordions <- list(
     DT::dataTableOutput("TraitDataTbl")
   ),
   accordion_panel(
-    value = "traitDataSum",
-    "Summary",
-    DT::dataTableOutput("TraitDataSum")
+    value = "traitDataOutliers",
+    "Outliers",
+    uiOutput("traitSummaryUI"),
+    uiOutput("outlierTables"),
+    uiOutput("factorInvalidTable")
+    #DT::dataTableOutput("traitDataOut")
   ),
   accordion_panel(
     value = "traitResPlot",
-    "Plot",
+    "Plots",
     uiOutput("trait.var.val")
+  ),
+  accordion_panel(
+    value = "traitCoverage",
+    "Coverage",
+    uiOutput("trait.coverage")
+  ),
+  accordion_panel(
+    value = "traitMissing",
+    "Missing Data",
+    uiOutput("trait.missing")
+  ),
+  accordion_panel(
+    value = "traitDataSum",
+    "Summary Value per Accession",
+    DT::dataTableOutput("TraitDataSum")
   ),
   accordion_panel(
     value = "traitMap",

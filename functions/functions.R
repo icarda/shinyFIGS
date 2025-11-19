@@ -22,7 +22,6 @@ getCrops <- function() {
 #' @return An object of class "data.frame" with specified climatic variables for coordinates in \code{sites}.
 
 extractWCdata <- function(sites, long, lat, var, res = 2.5){
-  
   #remove records having NA coordinates
   out <- list(
     is.na(sites[[long]]), 
@@ -35,20 +34,35 @@ extractWCdata <- function(sites, long, lat, var, res = 2.5){
   sp <- sp::SpatialPoints(xy)
   
   for (ivar in var){
-    
     rasterfile <- .getRasterData(var = ivar, res = res)
-    
+
     for (i in 1:length(names(rasterfile))){
-      
       f.name <- names(rasterfile)[i]
       var.name <- sub(paste(".*",res,"m_", sep = ''), "", f.name)
       print(var.name)
       sites[, var.name] <- raster::extract(rasterfile[[i]], sp, method = 'simple')
       sites[, var.name] <- round(sites[, var.name], 3)
-      
     }
-    
   }
+  
+  # test for parallel processing ...
+  # for (ivar in var){
+  #   rasterfile <- .getRasterData(var = ivar, res = res)
+  #   n_cores <- detectCores()
+  #   cluster <- makeCluster(8)
+  #   registerDoParallel(cluster)
+  #   clim_vals <- foreach(i=1:length(names(rasterfile)), 
+  #                        .packages = c("terra","raster"),
+  #                        .combine='cbind') %dopar% {
+  #                          terra::extract(rasterfile[[i]], sp)
+  #                        }
+  #   var.name <- foreach(f.name = names(rasterfile), .combine = "c") %dopar% {
+  #     sub(paste(".*","2.5m_", sep = ''), "", f.name)
+  #   }
+  #   parallel::stopCluster(cluster)
+  #   colnames(clim_vals) <- var.name
+  #   sites <- cbind(sites, clim_vals)
+  # }
   
   return(sites)
 }
@@ -320,3 +334,291 @@ update_slider <- function(session, x, var) {
   newMax <- ceiling(max(x, na.rm = TRUE))
   updateSliderInput(session, inputId = var, value = c(newMin,newMax))
 }
+
+
+#' functions for traits data exploration (by Tamara Ortiz)
+#' 
+
+csvDownloadButton <- function(tableId, label = "Download as CSV", filename = "data.csv") {
+  htmltools::tags$button(
+    label,
+    onclick = sprintf("Reactable.downloadDataCSV('%s', '%s')", tableId, filename)
+  )
+}
+# General ----
+summaryPerYear <- function(df, accessions){
+  summary_year <- df %>%
+    group_by(YEAR) %>%
+    summarise(
+      n_igs = n_distinct(IG),
+      coverage = n_igs / nrow(accessions) * 100,
+      .groups = "drop"
+    )
+  plot <- ggplot(summary_year, aes(x = factor(YEAR), y = n_igs)) +
+    geom_col(fill = "steelblue") +
+    labs(title = "Unique IGs per Year", x = "Year", y = "Number of Unique IGs") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
+  return(ggplotly(plot, tooltip = c("y")))
+}
+
+cummulativePerYear <- function(df, accessions){
+  coverage_cum <- df %>%
+    arrange(YEAR, IG) %>%
+    distinct(YEAR, IG) %>%
+    mutate(first_seen = !duplicated(IG)) %>%
+    group_by(YEAR) %>%
+    summarise(new_igs = sum(first_seen), .groups = "drop") %>%
+    mutate(
+      cum_igs = cumsum(new_igs),
+      coverage_cum = 100 * cum_igs / nrow(accessions)
+    )
+  
+  coverage_cum <- coverage_cum %>%
+    mutate(YEAR = factor(YEAR))
+  
+  # as bar
+  barPlot <- ggplot(coverage_cum, aes(x = YEAR, y = coverage_cum)) +
+    geom_col(fill = "lightblue") +
+    geom_text(aes(label = sprintf("%.1f%%", coverage_cum)),
+              vjust = -0.3, size = 2
+    ) +
+    coord_cartesian(ylim = c(0, 105)) +
+    labs(
+      title = "Cumulative Collection Coverage by Year",
+      x = "Year",
+      y = "Coverage (%)"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
+  
+  return(ggplotly(barPlot, tooltip = c("y")))
+}
+
+# Numeric ----
+
+traitSummary <- function(df, ig_trait = NULL) {
+  trait <- names(df)[12]
+  safe_trait <- gsub("[^A-Za-z0-9]", "_", trait) #remove special characters
+  
+  trait_summary <- df %>%
+    group_by(YEAR) %>%
+    summarise(
+      mean = mean(.data[[trait]], na.rm = TRUE),
+      sd  = sd(.data[[trait]]),
+      min  = min(.data[[trait]]),
+      max = max(.data[[trait]], na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  trait_summaryTable <- htmltools::browsable(
+    tagList(
+      csvDownloadButton(paste0("traitSummary", safe_trait),
+                        "Download as CSV",
+                        filename = paste0("traitSummary", safe_trait, ".csv")),
+      reactable(trait_summary,
+                filterable = TRUE,
+                searchable = TRUE,
+                elementId = paste0("traitSummary", safe_trait))
+    )
+  )
+  
+  # Maximum outliers
+  maxOutliers <- df[df[[12]] > (mean(df[[12]]) + 3 * (sd(df[[12]]))), ]
+  maxOutliersTable <- htmltools::browsable(
+    tagList(
+      csvDownloadButton(paste0("maxOutliers", safe_trait),
+                        "Download as CSV",
+                        filename = paste0("maxOutliers", safe_trait, ".csv")),
+      reactable(maxOutliers,
+                filterable = TRUE,
+                searchable = TRUE,
+                elementId = paste0("maxOutliers", safe_trait))
+    )
+  )
+  
+  # Minimum outliers
+  minOutliers <- df[df[[12]] < (mean(df[[12]]) - 3 * (sd(df[[12]]))), ]
+  minOutliersTable <- htmltools::browsable(
+    tagList(
+      csvDownloadButton(paste0("minOutliers", safe_trait),
+                        "Download as CSV",
+                        filename = paste0("minOutliers", safe_trait, ".csv")),
+      reactable(minOutliers,
+                filterable = TRUE,
+                searchable = TRUE,
+                elementId = paste0("minOutliers", safe_trait))
+    )
+  )
+  
+  # Histogram of trait values
+  histPlot <- ggplot(df, aes(x = .data[[trait]])) +
+    geom_histogram(fill = "lightblue", bins = 30, color = "black") +
+    geom_vline(aes(xintercept = mean(.data[[trait]], na.rm = TRUE)),
+               color = "red", linewidth = 1, linetype = "dashed") +
+    geom_vline(aes(xintercept = median(.data[[trait]], na.rm = TRUE)),
+               color = "darkgreen", linewidth = 1, linetype = "dotdash") +
+    labs(title = paste("Distribution of", trait),
+         x = trait, y = "Count",
+         caption = "Red = Mean | Green = Median") +
+    theme_minimal()
+  
+  # Boxplot of trait values
+  boxPlot <- ggplot(df, aes(x = factor(YEAR), y = .data[[trait]])) +
+    geom_boxplot(fill = "lightgreen") +
+    geom_point(aes(text = paste("IG:", IG,
+                                "<br>Year:", YEAR,
+                                "<br>", trait, ":", .data[[trait]])),
+               alpha = 0, size = 2, stroke = 0) +
+    labs(title = paste(trait, "Distribution by Year"),
+         x = "Year", y = trait) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
+  
+  # Convert to interactive plotly
+  boxplot_plotly <- ggplotly(boxPlot, tooltip = "text")
+  
+  # Remove hover info from boxplot layer
+  boxplot_plotly <- boxplot_plotly %>%
+    plotly::style(hoverinfo = "none", traces = 1)
+  
+  return(list(
+    traitSummary = trait_summaryTable,
+    maxOutliers = maxOutliersTable,
+    minOutliers = minOutliersTable,
+    histogram = ggplotly(histPlot, tooltip = c("x")),
+    boxplot = boxplot_plotly
+  ))
+}
+
+# Factor ----
+
+summaryPerYearF <- function(df, accessions){
+  # unique IGs per year + coverage
+  summary_year <- df %>%
+    group_by(YEAR) %>%
+    summarise(
+      n_igs = n_distinct(IG),
+      coverage = n_igs / nrow(accessions) * 100,
+      .groups = "drop"
+    )
+  
+  # unique IGs per year
+  plot <- ggplot(summary_year, aes(x = factor(YEAR), y = n_igs)) +
+    geom_col(fill = "steelblue") +
+    labs(title = "Unique IGs per Year", x = "Year", y = "Number of Unique IGs") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  return(ggplotly(plot, tooltip = c("y")))
+}
+
+cummulativePerYearF <- function(df, accessions){
+  # cumulative coverage by year
+  coverage_cum <- df %>%
+    arrange(YEAR, IG) %>%
+    distinct(YEAR, IG) %>%
+    mutate(first_seen = !duplicated(IG)) %>%
+    group_by(YEAR) %>%
+    summarise(new_igs = sum(first_seen), .groups = "drop") %>%
+    mutate(
+      cum_igs = cumsum(new_igs),
+      coverage_cum = 100 * cum_igs / nrow(accessions)
+    )
+  coverage_cum <- coverage_cum %>%
+    mutate(YEAR = factor(YEAR))
+  
+  # as bar
+  barPlot <- ggplot(coverage_cum, aes(x = factor(YEAR))) +
+    geom_col(aes(y = coverage_cum), fill = "lightblue") +
+    geom_text(
+      aes(y = coverage_cum, label = sprintf("%.1f%%", coverage_cum)),
+      vjust = -0.3,
+      size = 2,
+      hjust = 0.5
+    ) +
+    ylim(0, 105) +
+    labs(
+      title = "Cumulative Collection Coverage by Year",
+      x = "Year", y = "Coverage (%)"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  return(ggplotly(barPlot, tooltip = c("y")))
+}
+
+traitSummaryF <- function(df, traitNumber, factor_trait_info){
+  trait <- names(df)[12]
+  
+  # Histogram of trait values
+  histPlot <- ggplot(df, aes(x = .data[[trait]])) +
+    geom_bar(fill = "lightblue", color = "black") +
+    labs(title = paste("Distribution of", trait), x = paste(trait, "Category"), y = "Count") +
+    theme_minimal()
+  
+  fctrs <- unlist(factor_trait_info$numeric_options[factor_trait_info$ID == traitNumber])
+  df$Value <- ifelse(as.character(df[[12]]) %in% as.character(fctrs),
+                     "Available", "Not Available")
+  
+  # Proportions by group
+  propGroup <- ggplot(df, aes(x = factor(YEAR), fill = factor(.data[[trait]]),
+                              color = Value, linewidth = Value)) +
+    geom_bar(position = "fill") +
+    scale_fill_manual(values = RColorBrewer::brewer.pal(12, "Set3")) +
+    scale_color_manual(values = c("Not Available" = "black", "Available" = NA), guide = "none") +
+    scale_linewidth_manual(values = c("Not Available" = 0.4, "Available" = 0), guide = "none") +
+    scale_y_continuous(labels = scales::percent_format()) +
+    labs(title = paste(trait, "distribution by Year"), x = "Year", y = "Proportion", fill = trait) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
+  
+  # Counts by group
+  countsGroup <- ggplot(df, aes(x = factor(YEAR), fill = factor(.data[[trait]]), 
+                                color = Value, linewidth = Value)) +
+    geom_bar(position = position_dodge2(preserve = "single")) +
+    scale_fill_manual(values = RColorBrewer::brewer.pal(12, "Set3")) +
+    scale_color_manual(values = c("Not Available" = "black", "Available" = NA), 
+                       guide = "none") +
+    scale_linewidth_manual(values = c("Not Available" = 0.4, "Available" = 0), 
+                           guide = "none") +
+    labs(title = paste(trait, "counts by Year"), x = "Year", y = "Count", fill = trait) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
+  
+  return(list(histogram = ggplotly(histPlot, tooltip = c("x")),
+              proportionsByGroup = ggplotly(propGroup, tooltip = c("fill")),
+              countsByGroup = ggplotly(countsGroup, tooltip = c("fill"))))
+}
+
+traitSummaryFFil <- function(df, traitNumber){
+  trait <- names(df)[12]
+  
+  # Histogram of trait values
+  histPlot <- ggplot(df, aes(x = .data[[trait]])) +
+    geom_bar(fill = "lightblue", color = "black") +
+    labs(title = paste("Distribution of", trait), x = "EGV category", y = "Count") +
+    theme_minimal()
+  
+  # Proportions by group
+  propGroup <- ggplot(df, aes(x = factor(YEAR), fill = factor(.data[[trait]]))) +
+    geom_bar(position = "fill") +
+    scale_fill_manual(values = RColorBrewer::brewer.pal(12, "Set3")) +
+    scale_y_continuous(labels = percent_format()) +
+    labs(title = paste(trait, " distribution by Year"), x = "Year", y = "Proportion", 
+         fill = trait) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
+  
+  # Counts by group
+  countsGroup <- ggplot(df, aes(x = factor(YEAR), fill = factor(.data[[trait]]))) +
+    geom_bar(position = position_dodge2(preserve = "single")) +
+    scale_fill_manual(values = RColorBrewer::brewer.pal(12, "Set3")) +
+    labs(title = paste(trait, "counts by Year"), x = "Year", y = "Count", fill = trait) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
+  
+  return(list(histogram = ggplotly(histPlot, tooltip = c("x")),
+              proportionsByGroup = ggplotly(propGroup, tooltip = c("fill")),
+              countsByGroup = ggplotly(countsGroup, tooltip = c("fill"))))
+}
+

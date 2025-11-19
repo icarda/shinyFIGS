@@ -193,10 +193,12 @@ function(input, output, session) {
   observeEvent(input$table_rows_all,{
     if(input$dataSrc == 'byCrop'){
       rv$crop <- unique(datasetInputCrop()[['CROP_NAME']])
+      #rv$crop <- unique(datasetInputCrop()[['Crop']])
       rv$datasetInput <- datasetInputCrop()[input$table_rows_all,]
     }
     else if(input$dataSrc == 'byIG'){
       rv$crop <- unique(rv$datasetInput[['CROP_NAME']])
+      #rv$crop <- unique(datasetInputCrop()[['Crop']])
     }
   })
   
@@ -702,19 +704,21 @@ function(input, output, session) {
     observe({
       updateSelectInput(session, "IG.Trait", label = "Select IG Column", choices = names(rv$datasetInput))
       updateSelectInput(session, "traitName", label = "Select Trait", choices = rv$traits[['Trait']])
-      
     })
     
-    observeEvent(input$getTraitsData,{
+    observeEvent(input$getTraitsData, {
       withProgress(message = "Getting Traits Data ...", {
         traitId <- rv$traits[rv$traits$Trait == input$traitName, 'ID']
         traitsData <- icardaFIGSr::getTraitsData(IG = rv$datasetInput[[input$IG.Trait]], traitID = as.numeric(traitId))
        
         rv$traitsData <- traitsData %>% mutate_at(input$IG.Trait, funs(round(., 2)))
         rv$traitsData[['YEAR']] = as.factor(rv$traitsData[['YEAR']])
+        rv$field.name <- as.character(rv$traits[rv$traits$Trait == input$traitName, 'Field Name'])
         
-        if(!is.na(subset(rv$traits, ID==as.numeric(traitId))$Options)){
-        #if(!is.na(rv$traits[rv$traits$ID == as.numeric(traitId), 'Options'])){
+        if(is.na(rv$traits[rv$traits$Trait == input$traitName, 'Options'])) 
+          rv$isTraitNum = TRUE
+        else rv$isTraitNum = FALSE
+        if(!rv$isTraitNum){
           last_column = colnames(rv$traitsData)[length(colnames(rv$traitsData))]
           rv$traitsData[[last_column]] = factor(rv$traitsData[[last_column]])
         }
@@ -722,6 +726,67 @@ function(input, output, session) {
       accordion_panel_open(id="trait_accd", values="traitDataTable", session = session)
     })
     
+    
+    observe({
+      req(rv$traits)
+      # ---- Numeric traits ----
+      rv$num_traits <- rv$traits$ID[is.na(rv$traits$Options)]
+      
+      # ---- Factor traits ----
+      rv$factor_traits <- rv$traits$ID[!is.na(rv$traits$Options)]
+      
+      rv$factor_trait_info <- rv$traits %>%
+        filter(!is.na(Options)) %>%
+        mutate(
+          numeric_options = str_extract_all(Options, "\\d+"),
+          numeric_options = lapply(numeric_options, function(x) {
+            factor(as.numeric(x))
+          })
+        )
+    })
+    
+    # ---- Global "no data" notification ----
+    output$noDataMessage <- renderUI({
+      req(input$traitName)
+      
+      df <- tryCatch(rv$traitsData, error = function(e) NULL)
+      
+      # Check if trait has no data at all or all NAs
+      if (is.null(df) || nrow(df) == 0) {
+        div(class = "alert alert-danger", style = "margin-top:10px;",
+            paste("⚠️ Trait", rv$traits$Trait[rv$traits$ID == input$traitName],
+                  "(ID:", input$traitName, ") has no records available."))
+        
+      } else {
+        # find first numeric or factor column with data
+        data_cols <- which(sapply(df, function(x) is.numeric(x) || is.factor(x)))
+        if (length(data_cols) == 0) return(NULL)
+        
+        if (all(is.na(df[[data_cols[1]]]))) {
+          div(class = "alert alert-danger", style = "margin-top:10px;",
+              paste("⚠️ Trait", rv$traits$Trait[rv$traits$ID == input$traitName],
+                    "(ID:", input$traitName, ") has no non-missing data values."))
+        } else {
+          NULL
+        }
+      }
+    })
+    
+    # ---- Missing Data (IGs without trait records) ----
+    missingData <- reactive({
+      req(rv$traitsData)
+      
+      trait_filtered <- rv$traitsData %>%
+        dplyr::select(IG) %>%
+        distinct()
+      
+      missing_igs <- rv$datasetInput %>%
+        filter(!IG %in% trait_filtered$IG)
+      
+      return(missing_igs)
+    })
+    
+    # ------- Trait descriptors table -------
     output$TraitTbl <- DT::renderDataTable(server = FALSE, {
       DT::datatable(rv$traits,
                     rownames = FALSE,
@@ -736,6 +801,7 @@ function(input, output, session) {
                                      text = 'Download'))))
     })
     
+    # ------- Trait data table -------
     output$TraitDataTbl <- DT::renderDataTable(server = FALSE, {
       DT::datatable(rv$traitsData,
                     rownames = FALSE,
@@ -758,41 +824,63 @@ function(input, output, session) {
                       ")))
     })
     
-    output$TraitDataSum <- DT::renderDataTable(server = FALSE, {
-      input$getTraitsData
-      rv$traitName <- isolate(input$traitName)
-      rv$field.name <- as.character(rv$traits[rv$traits$Trait == rv$traitName, 'Field Name'])
-      withProgress(message = "Calculating summary ...", {
-        
-        if(is.na(rv$traits[rv$traits$Trait == rv$traitName, 'Options'])){
-          rv$isTraitNum <- TRUE
+    # ---------- Outliers ---------
+    output$traitSummaryUI <- renderUI({
+      req(rv$traitsData)
+      if (rv$isTraitNum) {
+        withProgress(message = "Getting mean, sd, min and max...", {
           rv$traitsData[[rv$field.name]] <- as.numeric(rv$traitsData[[rv$field.name]])
-          rv$traitSummary <- rv$traitsData %>% group_by(IG) %>% summarise(across(rv$field.name, mean)) %>% mutate_at(rv$field.name, funs(round(., 2)))
-        }
-        
-        else{
-          rv$isTraitNum <- FALSE
-          rv$traitSummary <- rv$traitsData %>% group_by(IG) %>% summarise(across(rv$field.name, max.frequency)) %>% mutate(across(where(is.character), as.factor))
-        }
-        
-        DT::datatable(rv$traitSummary,
-                      rownames = FALSE,
-                      filter = list(position = "top", clear = FALSE),
-                      extensions = 'Buttons',
-                      options = list(scrollX = TRUE,
-                                     dom = "Bfrtip",
-                                     pageLength = 10,
-                                     buttons = list(list(
-                                       extend = "collection",
-                                       buttons = list(
-                                         list(extend = 'csv', filename = paste0(rv$crop,"_",input$traitName,"_summary")),
-                                         list(extend = 'excel', filename = paste0(rv$crop,"_",input$traitName,"_summary"))),
-                                       text = 'Download')),
-                                     columnDefs = list(list(targets = 1, searchable = FALSE))))
-      })
-      
+          res <- traitSummary(rv$traitsData)
+          res$traitSummary
+        })
+      }
     })
     
+    output$outlierTables <- renderUI({
+      req(rv$traitsData)
+      if (rv$isTraitNum) {
+        res <- traitSummary(rv$traitsData)
+        tagList(
+          h4("Outlier Accessions"),
+          strong("Maximum Outliers:"), res$maxOutliers, br(),
+          strong("Minimum Outliers:"), res$minOutliers
+        )
+      }
+    })
+    
+    # ---- Factor invalid entries ----
+    output$factorInvalidTable <- renderUI({
+      req(rv$traitsData)
+      if (!rv$isTraitNum) {
+        #trait_num <- as.numeric(input$traitName)
+        #traitId <- rv$traits[rv$traits$Trait == input$traitName, 'ID']
+        valid_opts <- unlist(rv$factor_trait_info$numeric_options[rv$factor_trait_info$Trait == input$traitName])
+        df <- rv$traitsData
+        trait_col <- names(df)[12]
+        
+        invalid_rows <- df %>%
+          filter(!.data[[trait_col]] %in% valid_opts | is.na(.data[[trait_col]]))
+        
+        if (nrow(invalid_rows) == 0) {
+          return(h5("✅ All IGs are within the expected factor range."))
+        } else {
+          safe_trait <- gsub("[^A-Za-z0-9]", "_", trait_col)
+          
+          tagList(
+            h4("⚠️ IGs Outside Expected Factor Range"),
+            csvDownloadButton(paste0("invalidFactors_", safe_trait),
+                              "Download as CSV",
+                              filename = paste0("invalidFactors_", safe_trait, ".csv")),
+            reactable(invalid_rows[, c("IG", "YEAR", trait_col)],
+                      filterable = TRUE,
+                      searchable = TRUE,
+                      elementId = paste0("invalidFactors_", safe_trait))
+          )
+        }
+      }
+    })
+    
+    # ------ Plots -------
     output$trait.var.val <- renderUI({
       req(rv$traitsData)
       traitPlts <- list(
@@ -878,11 +966,42 @@ function(input, output, session) {
       
     })
     
+    
+    # ------ Summaries per accession (frequent value for coded traits and average for numeric traits) --------
+    output$TraitDataSum <- DT::renderDataTable(server = FALSE, {
+      req(rv$traitsData)
+      withProgress(message = "Calculating summary values ...", {
+        if(rv$isTraitNum){
+          rv$traitSummaryperAcc <- rv$traitsData %>% group_by(IG) %>% summarise(across(rv$field.name, mean)) %>% mutate_at(rv$field.name, funs(round(., 2)))
+        }
+        
+        else{
+          rv$traitSummaryperAcc <- rv$traitsData %>% group_by(IG) %>% summarise(across(rv$field.name, max.frequency)) %>% mutate(across(where(is.character), as.factor))
+        }
+        
+        DT::datatable(rv$traitSummaryperAcc,
+                      rownames = FALSE,
+                      filter = list(position = "top", clear = FALSE),
+                      extensions = 'Buttons',
+                      options = list(scrollX = TRUE,
+                                     dom = "Bfrtip",
+                                     pageLength = 10,
+                                     buttons = list(list(
+                                       extend = "collection",
+                                       buttons = list(
+                                         list(extend = 'csv', filename = paste0(rv$crop,"_",input$traitName,"_summary")),
+                                         list(extend = 'excel', filename = paste0(rv$crop,"_",input$traitName,"_summary"))),
+                                       text = 'Download')),
+                                     columnDefs = list(list(targets = 1, searchable = FALSE))))
+      })
+      
+    })
+    
     #map traits summary
     #observe({
     output$traitMap <- leaflet::renderLeaflet({
       #req(rv$traitSummary, rv$isTraitNum)
-      filtered.traits.sum <- rv$traitSummary[input$TraitDataSum_rows_all,]
+      filtered.traits.sum <- rv$traitSummaryperAcc[input$TraitDataSum_rows_all,]
       
       #merge rv$datasetInput and rv$traitSummary on IG
       trait.coordinates <- merge(rv$datasetInput, filtered.traits.sum, by = "IG")
