@@ -1038,6 +1038,25 @@ function(input, output, session) {
       
     })
     
+    # ---- Coverage plots ----
+    output$summaryYearPlot <- renderPlotly({
+      req(rv$traitsData)
+      df <- rv$traitsData
+      if (nrow(df) == 0) return(NULL)
+        summaryPerYear(df, rv$datasetInput)
+      # if (rv$isTraitNum) summaryPerYear(df, rv$datasetInput)
+      # else summaryPerYear(filteredFactorData(), rv$datasetInput)
+    })
+    
+    output$cumulativePlot <- renderPlotly({
+      req(rv$traitsData)
+      df <- rv$traitsData
+      if (nrow(df) == 0) return(NULL)
+        cummulativePerYear(df, rv$datasetInput)
+      # if (traitType() == "numeric") cummulativePerYear(df, accessions)
+      # else cummulativePerYear(filteredFactorData(), accessions)
+    })
+    
     #map traits summary
     #observe({
     output$traitMap <- leaflet::renderLeaflet({

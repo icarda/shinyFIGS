@@ -306,7 +306,9 @@ trait_accordions <- list(
   accordion_panel(
     value = "traitCoverage",
     "Coverage",
-    uiOutput("trait.coverage")
+    plotlyOutput("summaryYearPlot"),
+    plotlyOutput("cumulativePlot")
+    #uiOutput("trait.coverage")
   ),
   accordion_panel(
     value = "traitMissing",

@@ -345,17 +345,18 @@ csvDownloadButton <- function(tableId, label = "Download as CSV", filename = "da
     onclick = sprintf("Reactable.downloadDataCSV('%s', '%s')", tableId, filename)
   )
 }
+
 # General ----
 summaryPerYear <- function(df, accessions){
   summary_year <- df %>%
-    group_by(YEAR) %>%
-    summarise(
-      n_igs = n_distinct(IG),
+    dplyr::group_by(YEAR) %>%
+    dplyr::summarise(
+      n_igs = dplyr::n_distinct(IG),
       coverage = n_igs / nrow(accessions) * 100,
       .groups = "drop"
     )
   plot <- ggplot(summary_year, aes(x = factor(YEAR), y = n_igs)) +
-    geom_col(fill = "steelblue") +
+    geom_col(fill = "#ADD0B3") +
     labs(title = "Unique IGs per Year", x = "Year", y = "Number of Unique IGs") +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
@@ -364,18 +365,18 @@ summaryPerYear <- function(df, accessions){
 
 cummulativePerYear <- function(df, accessions){
   coverage_cum <- df %>%
-    arrange(YEAR, IG) %>%
-    distinct(YEAR, IG) %>%
-    mutate(first_seen = !duplicated(IG)) %>%
-    group_by(YEAR) %>%
-    summarise(new_igs = sum(first_seen), .groups = "drop") %>%
-    mutate(
+    dplyr::arrange(YEAR, IG) %>%
+    dplyr::distinct(YEAR, IG) %>%
+    dplyr::mutate(first_seen = !duplicated(IG)) %>%
+    dplyr::group_by(YEAR) %>%
+    dplyr::summarise(new_igs = sum(first_seen), .groups = "drop") %>%
+    dplyr::mutate(
       cum_igs = cumsum(new_igs),
       coverage_cum = 100 * cum_igs / nrow(accessions)
     )
   
   coverage_cum <- coverage_cum %>%
-    mutate(YEAR = factor(YEAR))
+    dplyr::mutate(YEAR = factor(YEAR))
   
   # as bar
   barPlot <- ggplot(coverage_cum, aes(x = YEAR, y = coverage_cum)) +
