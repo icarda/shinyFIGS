@@ -406,8 +406,8 @@ traitSummary <- function(df, ig_trait = NULL) {
     dplyr::group_by(YEAR) %>%
     dplyr::summarise(
       mean = mean(.data[[trait]], na.rm = TRUE),
-      sd  = sd(.data[[trait]]),
-      min  = min(.data[[trait]]),
+      sd  = sd(.data[[trait]], na.rm = TRUE),
+      min  = min(.data[[trait]], na.rm = TRUE),
       max = max(.data[[trait]], na.rm = TRUE),
       .groups = "drop"
     )
@@ -426,6 +426,8 @@ traitSummary <- function(df, ig_trait = NULL) {
   
   # Maximum outliers
   maxOutliers <- df[df[[12]] > (mean(df[[12]]) + 3 * (sd(df[[12]]))), ]
+  maxOutliers <- maxOutliers %>% dplyr::select(c(1,2,3,4,5,12))
+  
   maxOutliersTable <- htmltools::browsable(
     tagList(
       csvDownloadButton(paste0("maxOutliers", safe_trait),
@@ -437,9 +439,11 @@ traitSummary <- function(df, ig_trait = NULL) {
                 elementId = paste0("maxOutliers", safe_trait))
     )
   )
-  
+
   # Minimum outliers
   minOutliers <- df[df[[12]] < (mean(df[[12]]) - 3 * (sd(df[[12]]))), ]
+  minOutliers <- minOutliers %>% dplyr::select(c(1,2,3,4,5,12))
+  
   minOutliersTable <- htmltools::browsable(
     tagList(
       csvDownloadButton(paste0("minOutliers", safe_trait),

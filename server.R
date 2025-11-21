@@ -710,8 +710,13 @@ function(input, output, session) {
       withProgress(message = "Getting Traits Data ...", {
         traitId <- rv$traits[rv$traits$Trait == input$traitName, 'ID']
         traitsData <- icardaFIGSr::getTraitsData(IG = rv$datasetInput[[input$IG.Trait]], traitID = as.numeric(traitId))
-       
-        rv$traitsData <- traitsData %>% mutate_at(input$IG.Trait, funs(round(., 2)))
+        
+        traitsData[[input$IG.Trait]] <- factor(traitsData[[input$IG.Trait]])
+        traitsData[['YEAR']] = as.factor(traitsData[['YEAR']])
+        
+        rv$traitsData <- traitsData
+        
+        #rv$traitsData <- traitsData %>% mutate_at(input$IG.Trait, funs(round(., 2)))
         rv$traitsData[['YEAR']] = as.factor(rv$traitsData[['YEAR']])
         rv$field.name <- as.character(rv$traits[rv$traits$Trait == input$traitName, 'Field Name'])
         
@@ -815,9 +820,8 @@ function(input, output, session) {
       }
       
       if(rv$isTraitNum)
-        filteredData()[[rv$field.name]] <- as.numeric(filteredData()[[rv$field.name]])
-      
-      df[["IG"]] <- factor(df[["IG"]])
+        df[[rv$field.name]] <- as.numeric(df[[rv$field.name]])
+    
       df <- df %>% dplyr::left_join(acc_filt, by = "IG")
       
       df
@@ -827,8 +831,7 @@ function(input, output, session) {
       req(!rv$isTraitNum, filteredData())
       
       df <- filteredData()
-      #trait_num <- as.numeric(rv$field.name)
-      #valid_opts <- unlist(factor_trait_info$numeric_options[factor_trait_info$ID == trait_num])
+
       valid_opts <- unlist(rv$factor_trait_info$numeric_options[rv$factor_trait_info$Trait == input$traitName])
       trait_col <- names(df)[12]
       
@@ -893,35 +896,57 @@ function(input, output, session) {
     })
     
     # ---------- Outliers ---------
-    output$traitSummaryUI <- renderUI({
-      req(rv$isTraitNum, filteredData())
+    
+    # ---------- Generate summaries and plots -------------
+    traitSummaryResult <- reactive({
+      req(filteredData())
+      
+      if (nrow(filteredData()) == 0) return(NULL)
+      
       if (rv$isTraitNum) {
-        withProgress(message = "Getting mean, sd, min and max...", {
-          #filteredData()[[rv$field.name]] <- as.numeric(filteredData()[[rv$field.name]])
-          res <- traitSummary(filteredData())
-          res$traitSummary
+        withProgress(message = "Generating summary and plots...", {
+          traitSummary(filteredData())
+        })
+      } else {
+        withProgress(message = "Generating summary and plots...", {
+          traitSummaryF(filteredFactorData(), input$traitName, rv$factor_trait_info)
         })
       }
     })
     
-    output$outlierTables <- renderUI({
-      req(rv$isTraitNum, filteredData())
+    output$traitSummaryUI <- renderUI({
+      
+      req(traitSummaryResult())
+      res <- traitSummaryResult()
+      
       if (rv$isTraitNum) {
-        res <- traitSummary(filteredData())
+        res$traitSummary
+      }
+
+    })
+    
+    output$outlierTables <- renderUI({
+      
+      req(traitSummaryResult())
+      res <- traitSummaryResult()
+      
+      if (rv$isTraitNum) {
         tagList(
           h4("Outlier Accessions"),
           strong("Maximum Outliers (> mean + 3*sd):"), res$maxOutliers, br(),
           strong("Minimum Outliers (< mean - 3*sd):"), res$minOutliers
         )
       }
+    
     })
     
     # ---- Factor invalid entries ----
     output$factorInvalidTable <- renderUI({
+      
       req(!rv$isTraitNum, filteredData())
+      
       if (!rv$isTraitNum) {
-        #trait_num <- as.numeric(input$traitName)
-        #traitId <- rv$traits[rv$traits$Trait == input$traitName, 'ID']
+        
         valid_opts <- unlist(rv$factor_trait_info$numeric_options[rv$factor_trait_info$Trait == input$traitName])
         df <- filteredData()
         trait_col <- names(df)[12]
@@ -1034,64 +1059,61 @@ function(input, output, session) {
     # })
     
     output$histPlot <- renderPlotly({
-      req(filteredData())
-      df <- filteredData()
-      if (nrow(df) == 0) return(NULL)
-      withProgress(message = "Creating histogram...", {
-        if (rv$isTraitNum) {
-            traitSummary(df)$histogram
-        } else {
-            traitSummaryF(filteredFactorData(), input$traitName, rv$factor_trait_info)$histogram
-        }
-      })
+      
+      req(traitSummaryResult())
+      res <- traitSummaryResult()
+      
+      res$histogram
+      
     })
     
     output$boxOrFactorPlot1 <- renderPlotly({
-      req(filteredData())
-      df <- filteredData()
-      if (nrow(df) == 0) return(NULL)
       
+      req(traitSummaryResult())
+      res <- traitSummaryResult()
       
       if (rv$isTraitNum) {
-        withProgress(message = "Creating boxplot...", {
-          traitSummary(df)$boxplot
-        })
+          res$boxplot
       } else {
-        withProgress(message = "Creating proportions plot...", {
-          traitSummaryF(filteredFactorData(), input$traitName, rv$factor_trait_info)$proportionsByGroup
-        })
+          res$proportionsByGroup
       }
+      
     })
     
     output$boxOrFactorPlot2 <- renderPlotly({
-      req(filteredData())
-      df <- filteredData()
-      if (nrow(df) == 0) return(NULL)
+      
+      req(traitSummaryResult())
+      res <- traitSummaryResult()
       
       if (!rv$isTraitNum) {
-        withProgress(message = "Getting trait counts by year...", {
-          traitSummaryF(filteredFactorData(), input$traitName, rv$factor_trait_info)$countsByGroup
-        })
+        res$countsByGroup
       }
+      
     })
     
     # ---- Coverage plots ----
     output$summaryYearPlot <- renderPlotly({
+      
       req(filteredData())
       df <- filteredData()
+      
       if (nrow(df) == 0) return(NULL)
-      #summaryPerYear(df, rv$datasetInput)
+      
       if (rv$isTraitNum) summaryPerYear(df, rv$datasetInput)
       else summaryPerYear(filteredFactorData(), rv$datasetInput)
+      
     })
     
     output$cumulativePlot <- renderPlotly({
+      
       req(filteredData())
       df <- filteredData()
+      
       if (nrow(df) == 0) return(NULL)
-      #cummulativePerYear(df, rv$datasetInput)
+      
       if (rv$isTraitNum) cummulativePerYear(df, rv$datasetInput)
       else cummulativePerYear(filteredFactorData(), rv$datasetInput)
+    
     })
     
     # ---- Missing Data (IGs without trait records) ----
