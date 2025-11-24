@@ -562,7 +562,7 @@ traitSummaryF <- function(df, traitName, factor_trait_info){
     labs(title = paste("Distribution of", trait), x = paste(trait, "Category"), y = "Count") +
     theme_minimal()
   
-  fctrs <- unlist(factor_trait_info$numeric_options[factor_trait_info$Trait == traitName])
+  fctrs <- unlist(factor_trait_info$valid_options[factor_trait_info$Trait == traitName])
   df$Value <- ifelse(as.character(df[[12]]) %in% as.character(fctrs),
                      "Available", "Not Available")
   

@@ -746,12 +746,9 @@ function(input, output, session) {
       
       rv$factor_trait_info <- rv$traits %>%
         filter(!is.na(Options)) %>%
-        mutate(
-          numeric_options = str_extract_all(Options, "\\d+"),
-          numeric_options = lapply(numeric_options, function(x) {
-            factor(as.numeric(x))
-          })
-        )
+        mutate(option_pairs = str_split(Options, ";"),
+               valid_options = map(option_pairs, ~ str_trim(str_extract(.x, "^[^-]+")))
+              )
     })
     
     # ---- Global "no data" notification ----
@@ -836,7 +833,7 @@ function(input, output, session) {
       
       df <- filteredData()
 
-      valid_opts <- unlist(rv$factor_trait_info$numeric_options[rv$factor_trait_info$Trait == input$traitName])
+      valid_opts <- unlist(rv$factor_trait_info$valid_options[rv$factor_trait_info$Trait == input$traitName])
       trait_col <- names(df)[12]
       
       # If checkbox selected, keep only valid options
@@ -951,7 +948,7 @@ function(input, output, session) {
       
       if (!rv$isTraitNum) {
         
-        valid_opts <- unlist(rv$factor_trait_info$numeric_options[rv$factor_trait_info$Trait == input$traitName])
+        valid_opts <- unlist(rv$factor_trait_info$valid_options[rv$factor_trait_info$Trait == input$traitName])
         df <- filteredData()
         trait_col <- names(df)[12]
         
@@ -968,7 +965,7 @@ function(input, output, session) {
             csvDownloadButton(paste0("invalidFactors_", safe_trait),
                               "Download as CSV",
                               filename = paste0("invalidFactors_", safe_trait, ".csv")),
-            reactable(invalid_rows[, c("IG", "YEAR", trait_col)],
+            reactable(invalid_rows,
                       filterable = TRUE,
                       searchable = TRUE,
                       elementId = paste0("invalidFactors_", safe_trait))
