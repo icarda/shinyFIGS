@@ -20,7 +20,8 @@ library(crosstalk)
 library(DT)
 library(rlang)
 library(grDevices)
-
+library(leaflet)
+library(purrr)
 
 # Load functions
 source(file.path('./functions/functions.R'), local = TRUE)

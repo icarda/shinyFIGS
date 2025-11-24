@@ -563,7 +563,9 @@ traitSummaryF <- function(df, traitName, factor_trait_info){
     theme_minimal()
   
   fctrs <- unlist(factor_trait_info$valid_options[factor_trait_info$Trait == traitName])
-  df$Value <- ifelse(as.character(df[[12]]) %in% as.character(fctrs),
+  
+  df$Value <- ifelse(map_lgl(str_split(df[[12]], pattern = "[;&]+"), 
+                              ~ all(str_trim(.x) %in% as.character(fctrs))),
                      "Available", "Not Available")
   
   # Dynamic color palette

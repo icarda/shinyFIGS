@@ -10,12 +10,6 @@ lapply(list_of_packages,
                         install.packages(x, dependencies = TRUE))
 if(!require('pcaMethods',character.only = TRUE)) BiocManager::install('pcaMethods')
 
-library(shiny)
-library(dplyr)
-library(leaflet)
-library(purrr)
-
-
 source(file.path('./functions/functions.R'), local = TRUE)
 
 for (f in list.files('./modules')) {
@@ -953,7 +947,8 @@ function(input, output, session) {
         trait_col <- names(df)[12]
         
         invalid_rows <- df %>%
-          filter(!.data[[trait_col]] %in% valid_opts | is.na(.data[[trait_col]]))
+          filter(!map_lgl(str_split(.data[[trait_col]], pattern = "[;&]+"), 
+                         ~ all(str_trim(.x) %in% valid_opts)) | is.na(.data[[trait_col]]))
         
         if (nrow(invalid_rows) == 0) {
           return(h5("✅ All IGs are within the expected factor range."))
