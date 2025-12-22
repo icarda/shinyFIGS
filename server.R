@@ -699,7 +699,31 @@ function(input, output, session) {
       updateSelectInput(session, "IG.Trait", label = "Select IG Column", choices = names(rv$datasetInput))
       updateSelectInput(session, "traitName", label = "Select Trait", choices = rv$traits[['Trait']])
     })
+
+    output$igSelector <- renderUI({
+    req(rv$traitsData)
     
+    igs_multi_year <- rv$traitsData %>%
+      dplyr::count(IG) %>%
+      dplyr::filter(n > 1) %>% # more than 1 record
+      dplyr::pull(IG) %>%
+      sort()
+    
+    if (length(igs_multi_year) == 0) {
+      return(
+        div(class = "alert alert-warning",
+            "⚠️ No IGs have data recorded in more than one year for this trait.")
+      )
+    }
+    
+    selectizeInput(
+      "selectedIG",
+      "Select IG (≥ 2 years of data)",
+      choices = igs_multi_year,
+      options = list(placeholder = "Type IG…")
+    )
+  })
+  
     observeEvent(input$getTraitsData, {
       withProgress(message = "Getting Traits Data...", {
         traitId <- rv$traits[rv$traits$Trait == input$traitName, 'ID']
@@ -837,6 +861,15 @@ function(input, output, session) {
       
       df
     })
+
+    # ---- Trait data by year for each IG ----
+    igYearData <- reactive({
+      req(rv$traitsData, input$selectedIG)
+      
+      rv$traitsData %>%
+        dplyr::filter(IG == input$selectedIG) %>%
+        dplyr::arrange(as.numeric(as.character(YEAR)))
+    })
     
     # ---- Missing Data (IGs without trait records) ----
     missingData <- reactive({
@@ -889,7 +922,26 @@ function(input, output, session) {
                       $(header[header.length-1]).tooltip();
                       ")))
     })
+
+    # ---------- Trait data per year for each IG ---------
     
+    output$igYearTable <- renderDT({
+      req(igYearData())
+      
+      trait_col <- rv$field.name
+      
+      datatable(
+        igYearData() %>%
+          dplyr::select(YEAR, all_of(trait_col)),
+        rownames = FALSE,
+        options = list(
+          pageLength = 10,
+          dom = "tip",
+          order = list(list(0, "asc"))
+        )
+      )
+    })
+                           
     # ---------- Outliers ---------
     
     # ---------- Generate summaries and plots -------------
@@ -1053,6 +1105,42 @@ function(input, output, session) {
     #   }
     #   #make histogram of summaries
     # })
+
+    output$igYearPlot <- renderPlotly({
+      req(igYearData())
+      
+      trait_col <- rv$field.name
+      df <- igYearData()
+      
+      if (rv$isTraitNum) {
+        plot_ly(
+          df,
+          x = ~as.numeric(as.character(YEAR)),
+          y = as.formula(paste0("~`", trait_col, "`")),
+          type = "scatter",
+          mode = "lines+markers"
+        ) %>%
+          layout(
+            xaxis = list(title = "Year"),
+            yaxis = list(title = trait_col),
+            title = paste("IG", input$selectedIG, "-", rv$traitName)
+          )
+      } else {
+        plot_ly(
+          df,
+          x = ~YEAR,
+          y = as.formula(paste0("~`", trait_col, "`")),
+          type = "scatter",
+          mode = "markers",
+          color = as.formula(paste0("~`", trait_col, "`"))
+        ) %>%
+          layout(
+            xaxis = list(title = "Year"),
+            yaxis = list(title = "Trait category"),
+            title = paste("IG", input$selectedIG, "-", rv$traitName)
+          )
+      }
+    })
     
     output$histPlot <- renderPlotly({
       
