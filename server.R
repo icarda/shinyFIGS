@@ -233,6 +233,146 @@ function(input, output, session) {
       mapAccessions(map, df = df_cleaned, long = rv$lng, lat = rv$lat, y = input$y)
     }
   })
+
+  # ----- Metric glossary -----
+  metric_glossary <- dplyr::tibble(
+    Metric = c(
+      "NACC",
+      "NACC_PW",
+      "NACC_PL",
+      "NACC_PB",
+      "NACC_PA",
+      "NACC_ON",
+      "DOC_DOI"),
+    Meaning = c(
+      "Number of accessions",
+      "Number of accessions of wild or weedy populations",
+      "Number of accessions of traditional cultivars or landraces",
+      "Number of accessions of breeding or research material",
+      "Number of accessions of advanced or improved cultivars",
+      "Number of accessions originating in the genebank host country (Morocco)",
+      "Number of accesions with a DOI"
+    )
+  )
+  
+  output$metricsGlossary <- reactable::renderReactable({
+    reactable::reactable(
+      metric_glossary,
+      searchable = FALSE,
+      filterable  = FALSE,
+      defaultPageSize = 10,
+      columns = list(
+        Metric  = reactable::colDef(minWidth = 120),
+        Meaning = reactable::colDef(minWidth = 520)
+      )
+    )
+  })
+
+  # ----- Metrics -----
+  # Metrics per crop
+  passport_df_for_metrics <- reactive({
+    if (input$dataSrc == "byCrop") {
+      req(datasetInputCrop())
+      datasetInputCrop()
+    } else {
+      req(rv$datasetInput)
+      rv$datasetInput
+    }
+  })
+  
+  metrics_pop_by_crop_long <- reactive({
+    df <- passport_df_for_metrics()
+    print(names(df))
+    req(df)
+    
+    validate(
+      need("IG" %in% names(df), "Missing required column: IG"),
+      need("PopulationType" %in% names(df), "Missing required column: PopulationType"),
+      need("Crop" %in% names(df), "Missing required column: Crop")
+    )
+    
+    wide <- df %>%
+      dplyr::mutate(
+        pop_group = dplyr::case_when(
+          PopulationType %in% c("WI", "WE") ~ "PW",
+          PopulationType %in% c("CV", "LA") ~ "PL",
+          PopulationType %in% c("GS", "RM", "UM") ~ "PB",
+          PopulationType %in% c("RV") ~ "PA",
+          TRUE ~ "Unknown"
+        )
+      ) %>%
+      dplyr::group_by(Crop) %>%
+      dplyr::summarise(
+        NACC         = dplyr::n_distinct(IG),
+        NACC_PW      = dplyr::n_distinct(IG[pop_group == "PW"]),
+        NACC_PL      = dplyr::n_distinct(IG[pop_group == "PL"]),
+        NACC_PB      = dplyr::n_distinct(IG[pop_group == "PB"]),
+        NACC_PA      = dplyr::n_distinct(IG[pop_group == "PA"]),
+        NACC_Unknown = dplyr::n_distinct(IG[pop_group == "Unknown"]),
+        NACC_ON      = dplyr::n_distinct(IG[Country == "MAR"],),
+        DOC_DOI      = dplyr::n_distinct(IG[!is.na(DOI) & DOI != ""])
+      )
+    
+    long <- stats::reshape(
+      wide,
+      varying = names(wide)[names(wide) != "Crop"],
+      v.names = "Value",
+      timevar = "Metric",
+      times   = names(wide)[names(wide) != "Crop"],
+      direction = "long"
+    )
+    
+    long <- long[order(long$Crop, match(long$Metric,
+                                        c("NACC","NACC_PW","NACC_PL","NACC_PB",
+                                          "NACC_PA","NACC_Unknown","NACC_ON", "DOC_DOI"))), ]
+    rownames(long) <- NULL
+    long
+  })
+  
+  output$metricsTable <- DT::renderDataTable({
+    dfm <- metrics_pop_by_crop_long()
+    DT::datatable(
+      dfm[, c("Crop", "Metric", "Value")],
+      rownames = FALSE,
+      options = list(pageLength = 25, scrollX = TRUE)
+    )
+  })
+  
+  # Number of accessions added per year
+  acc_added_per_year <- reactive({
+    df <- passport_df_for_metrics()
+    req(df)
+    
+    validate(
+      need("IG" %in% names(df), "Missing required column: IG"),
+      need("CollectionYear" %in% names(df), "Missing required column: CollectionYear")
+    )
+    
+    df %>%
+      dplyr::mutate(
+        CollectionYear = readr::parse_number(as.character(CollectionYear))
+      ) %>%
+      dplyr::filter(!is.na(CollectionYear)) %>%
+      dplyr::group_by(CollectionYear) %>%
+      dplyr::summarise(
+        NACC_NEW = dplyr::n_distinct(IG),
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(CollectionYear)
+    
+  })
+  
+  output$accAddedPerYearTable <- DT::renderDataTable({
+    DT::datatable(
+      acc_added_per_year(),
+      rownames = FALSE,
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE,
+        dom = "tip"
+      )
+    )
+  })
   
   # Statistical plot of variables from dataset extracted by crop name
   output$first_var <- renderUI({
