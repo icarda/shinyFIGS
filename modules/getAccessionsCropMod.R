@@ -5,7 +5,7 @@ getAccessionsCropUI <- function(id){
     selectInput(ns("ori"), "Select country(ies)", multiple = TRUE, choices = c("Countries" = "", countries[1]), selected = ""),
     checkboxInput(ns("avail"), "Get available accessions", value = TRUE),
     checkboxInput(ns("coor"), "Get georeferenced accessions", value = TRUE),
-    checkboxInput(ns("doi"), "Include DOIs", value = FALSE),
+    checkboxInput(ns("doi"), "Include DOIs", value = TRUE),
     checkboxInput(ns("other_id"), "Include other IDs", value = FALSE)
   )
 }
