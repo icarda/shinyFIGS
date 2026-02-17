@@ -22,6 +22,7 @@ getAccessionsCropMod <- function(input, output, session, rv){
     available <- input$avail
     other_id <- input$other_id
     rv$countryCode <- countryCode(countryName = countryName)
+
     if(crop!=''){
       # query ICARDA database
       withProgress(message = "Querying ICARDA GRS DB ...", {
@@ -32,14 +33,15 @@ getAccessionsCropMod <- function(input, output, session, rv){
       })
       
       df <- as.data.frame(df)
+      
       #remove columns having all rows empty
       df <- Filter(function(x) !(all(x=="")), df)
       
-      df[["IG"]] <- factor(df[["IG"]])
+      df[["AccessionNumber"]] <- factor(df[["AccessionNumber"]])
       df[["PopulationType"]] <- factor(df[["PopulationType"]])
-      df[["Country"]] <- factor(df[["Country"]])
-      df[["Taxon"]] <- factor(df[["Taxon"]])
-      df[["CollectionYear"]] <- as.integer(df[["CollectionYear"]])
+      df[["CountryOfOrigin"]] <- factor(df[["CountryOfOrigin"]])
+      df[["TaxonName"]] <- factor(df[["TaxonName"]])
+      df[["CollectingYear"]] <- as.integer(df[["CollectingYear"]])
       
       if(other_id){
         other_column_names <- c("OTHER_ACCENUMB","OTHER_ACCENUMB_INST",
@@ -49,7 +51,6 @@ getAccessionsCropMod <- function(input, output, session, rv){
         other_column_names <- intersect(names(df), other_column_names)
         df[other_column_names] <- lapply(df[other_column_names], factor)
       }
-      
       df
     }
     else{
@@ -57,6 +58,6 @@ getAccessionsCropMod <- function(input, output, session, rv){
       return()
     }
   })
-  
+
   return(datasetInputCrop)
   }

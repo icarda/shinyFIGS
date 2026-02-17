@@ -122,10 +122,10 @@ function(input, output, session) {
                                      collectionYear = TRUE,
                                      other_id = input$other_id)
     })
-    df[["IG"]] <- factor(df[["IG"]])
+    df[["AccessionNumber"]] <- factor(df[["AccessionNumber"]])
     df[["PopulationType"]] <- factor(df[["PopulationType"]])
-    df[["Country"]] <- factor(df[["Country"]])
-    df[["Taxon"]] <- factor(df[["Taxon"]])
+    df[["CountryOfOrigin"]] <- factor(df[["CountryOfOrigin"]])
+    df[["TaxonName"]] <- factor(df[["TaxonName"]])
     df
   })
   
@@ -186,13 +186,13 @@ function(input, output, session) {
   
   observeEvent(input$table_rows_all,{
     if(input$dataSrc == 'byCrop'){
-      #rv$crop <- unique(datasetInputCrop()[['CROP_NAME']])
-      rv$crop <- unique(datasetInputCrop()[['Crop']])
+      rv$crop <- unique(datasetInputCrop()[['CropName']])
+      #rv$crop <- unique(datasetInputCrop()[['Crop']])
       rv$datasetInput <- datasetInputCrop()[input$table_rows_all,]
     }
     else if(input$dataSrc == 'byIG'){
-      #rv$crop <- unique(rv$datasetInput[['CROP_NAME']])
-      rv$crop <- unique(datasetInputCrop()[['Crop']])
+      rv$crop <- unique(rv$datasetInput[['CropName']])
+      #rv$crop <- unique(datasetInputCrop()[['Crop']])
     }
   })
   
@@ -237,7 +237,7 @@ function(input, output, session) {
   # Statistical plot of variables from dataset extracted by crop name
   output$first_var <- renderUI({
     req(rv$datasetInput)
-    rv$vars_plotted <- c('Country','PopulationType','Taxon')
+    rv$vars_plotted <- c('CountryOfOrigin','PopulationType','TaxonName')
     selectInput("var_plot", "Select the root variable", choices = c(rv$vars_plotted))
   })
   
@@ -710,19 +710,17 @@ function(input, output, session) {
         
         rv$traitsData <- traitsData
         
-        #rv$traitsData <- traitsData %>% mutate_at(input$IG.Trait, funs(round(., 2)))
         rv$traitsData[['YEAR']] = as.factor(rv$traitsData[['YEAR']])
-        rv$field.name <- as.character(rv$traits[rv$traits$Trait == input$traitName, 'Field Name'])
+        rv$field.name <- as.character(rv$traits[rv$traits$Trait == input$traitName, 'FieldName'])
         
-        if(is.na(rv$traits[rv$traits$Trait == input$traitName, 'Options'])){
+        if(isTRUE(rv$traits[rv$traits$Trait == input$traitName, 'Options']=='')){
           rv$isTraitNum = TRUE
-          rv$traitsData[[rv$field.name]] <- as.numeric(rv$traitsData[[rv$field.name]])
+          rv$traitsData[[input$traitName]] <- as.numeric(rv$traitsData[[input$traitName]])
         }
           
         else {
           rv$isTraitNum = FALSE
-          last_column = colnames(rv$traitsData)[length(colnames(rv$traitsData))]
-          rv$traitsData[[last_column]] = factor(rv$traitsData[[last_column]])
+          rv$traitsData[[input$traitName]] = factor(rv$traitsData[[input$traitName]])
         }
 
       })
@@ -815,9 +813,9 @@ function(input, output, session) {
       }
       
       if(rv$isTraitNum)
-        df[[rv$field.name]] <- as.numeric(df[[rv$field.name]])
+        df[[input$traitName]] <- as.numeric(df[[input$traitName]])
     
-      df <- df %>% dplyr::left_join(acc_filt, by = "IG")
+      df <- df %>% dplyr::left_join(acc_filt, by = "AccessionNumber")
       
       df
     })
@@ -828,11 +826,10 @@ function(input, output, session) {
       df <- filteredData()
 
       valid_opts <- unlist(rv$factor_trait_info$valid_options[rv$factor_trait_info$Trait == input$traitName])
-      trait_col <- names(df)[12]
       
       # If checkbox selected, keep only valid options
       if (isTRUE(input$filterFactorInvalids)) {
-        df <- df %>% dplyr::filter(as.character(.data[[trait_col]]) %in% as.character(valid_opts))
+        df <- df %>% dplyr::filter(as.character(.data[[input$traitName]]) %in% as.character(valid_opts))
       }
       
       df
@@ -843,11 +840,11 @@ function(input, output, session) {
       req(rv$traitsData)
       
       trait_filtered <- rv$traitsData %>%
-        dplyr::select(IG) %>%
+        dplyr::select(AccessionNumber) %>%
         distinct()
       
       missing_igs <- rv$datasetInput %>%
-        filter(!IG %in% trait_filtered$IG)
+        filter(!AccessionNumber %in% trait_filtered$AccessionNumber)
       
       return(missing_igs)
     })
@@ -892,14 +889,21 @@ function(input, output, session) {
 
     # ---------- Trait data per year for each IG ---------
     
+    # ---- Trait data by year for each IG ----
+    igYearData <- reactive({
+      req(rv$traitsData, input$selectedIG)
+      
+      rv$traitsData %>%
+        dplyr::filter(IG == input$selectedIG) %>%
+        dplyr::arrange(as.numeric(as.character(YEAR)))
+    })
+    
     output$igYearTable <- renderDT({
       req(igYearData())
       
-      trait_col <- rv$field.name
-      
       datatable(
         igYearData() %>%
-          dplyr::select(YEAR, all_of(trait_col)),
+          dplyr::select(YEAR, all_of(input$traitName)),
         rownames = FALSE,
         options = list(
           pageLength = 10,
@@ -914,12 +918,12 @@ function(input, output, session) {
     # ---------- Generate summaries and plots -------------
     traitSummaryResult <- reactive({
       req(filteredData())
-      
+      print(input$traitName)
       if (nrow(filteredData()) == 0) return(NULL)
       
       if (rv$isTraitNum) {
         withProgress(message = "Generating summary and plots...", {
-          traitSummary(filteredData())
+          traitSummary(filteredData(), input$traitName)
         })
       } else {
         withProgress(message = "Generating summary and plots...", {
@@ -962,17 +966,17 @@ function(input, output, session) {
       if (!rv$isTraitNum) {
         
         valid_opts <- unlist(rv$factor_trait_info$valid_options[rv$factor_trait_info$Trait == input$traitName])
+        print(valid_opts)
         df <- filteredData()
-        trait_col <- names(df)[12]
         
         invalid_rows <- df %>%
-          filter(!map_lgl(str_split(.data[[trait_col]], pattern = "[;&]+"), 
-                         ~ all(str_trim(.x) %in% valid_opts)) | is.na(.data[[trait_col]]))
+          filter(!map_lgl(str_split(.data[[input$traitName]], pattern = "[;&]+"), 
+                         ~ all(str_trim(.x) %in% valid_opts)) | is.na(.data[[input$traitName]]))
         
         if (nrow(invalid_rows) == 0) {
           return(h5("✅ All IGs are within the expected factor range."))
         } else {
-          safe_trait <- gsub("[^A-Za-z0-9]", "_", trait_col)
+          safe_trait <- gsub("[^A-Za-z0-9]", "_", input$traitName)
           
           tagList(
             h4("⚠️ IGs Outside Expected Factor Range"),
@@ -989,122 +993,36 @@ function(input, output, session) {
     })
     
     # ------ Plots -------
-    
-    # output$trait.var.val <- renderUI({
-    #   req(rv$traitsData)
-    #   traitPlts <- list(
-    #     #plotly::plotlyOutput("traitBoxPlot"),
-    #     plotly::plotlyOutput("exptIGFreq"),
-    #     plotly::plotlyOutput("yearIGFreq"),
-    #     #selectInput("year.hist", "Select Year", c("Year" = "")),
-    #     plotly::plotlyOutput("hist.or.barplot")
-    #   )
-    #   do.call(tagList, traitPlts)
-    # })
-    # 
-    # output$exptIGFreq <- plotly::renderPlotly({
-    #   req(rv$traitsData)
-    #   freq.by.expt <- rv$traitsData %>% dplyr::group_by(EXPT) %>% 
-    #                     dplyr::summarize(count_IG=length(unique(IG)))
-    #   
-    #   plotly::plot_ly(freq.by.expt, x = freq.by.expt[['EXPT']], y = ~count_IG, type = 'bar', color = "#ff8103") %>%
-    #     plotly::layout(yaxis = list(title = ""), title = list(text = 'No. of unique IGs per EXPT', y = 0.9))
-    # })
-    # 
-    # output$yearIGFreq <- plotly::renderPlotly({
-    #   req(rv$traitsData)
-    #   freq.by.year <- rv$traitsData %>% dplyr::group_by(YEAR) %>% 
-    #                     dplyr::summarize(count_IG=length(unique(IG)))
-    #   
-    #   plotly::plot_ly(freq.by.year, x = freq.by.year[['YEAR']], y = ~count_IG, type = 'bar', color = "#ff8103") %>%
-    #     plotly::layout(yaxis = list(title = ""), title = list( text = 'No. of unique IGs per year', y = 0.9))
-    #   
-    # })
-    # 
-    # output$hist.or.barplot <- plotly::renderPlotly({
-    #   
-    #   req(rv$traitsData)
-    #   
-    #   if(!rv$isTraitNum){
-    #     
-    #     freq.by.cat <- rv$traitsData %>% dplyr::group_by(across(all_of(rv$field.name))) %>% 
-    #                       dplyr::summarize(count_IG=length(unique(IG))) 
-    #     
-    #     plotly::plot_ly(freq.by.cat, x = freq.by.cat[[rv$field.name]], y = ~count_IG, type = 'bar', color = "#ff8103") %>% 
-    #       plotly::layout(yaxis = list(title = ""), title = list(text = 'No. of unique IGs per category', y = 0.9))
-    #     
-    #     #make frequency graph per experiment
-    #     
-    #   }
-    #   else{
-    #     # histogram by EXPT
-    #     experiments <- rv$traitsData %>%
-    #       dplyr::arrange(-desc(YEAR)) %>%
-    #       dplyr::select(EXPT)
-    #   
-    #     expts <- unique(experiments[["EXPT"]])
-    #   
-    #     plotly::plot_ly(rv$traitsData, x = rv$traitsData[[rv$field.name]],
-    #                   transforms = list(
-    #                     list(
-    #                       type = 'filter',
-    #                       target = ~EXPT,
-    #                       operation = '=',
-    #                       value = expts[1]
-    #                     )),
-    #                   color = "#ff8103") %>%
-    #       plotly::add_histogram() %>%
-    #       plotly::layout(
-    #         xaxis = list(title = rv$traitName),
-    #         yaxis = list(title = "No. of accessions"),
-    #         updatemenus = list(
-    #           list(
-    #             x = 0.1,
-    #             y = 1.07,
-    #             xref = 'paper',
-    #             yref = 'paper',
-    #             yanchor = 'top',
-    #             type = 'dropdown',
-    #             active = 0,
-    #             buttons = create_buttons(expts)
-    #           )
-    #         ))
-    #   }
-    #   #make histogram of summaries
-    # })
 
     output$igYearPlot <- renderPlotly({
       req(igYearData())
       
-      trait_col <- rv$field.name
-      df <- igYearData()
-      
       if (rv$isTraitNum) {
         plot_ly(
-          df,
+          igYearData(),
           x = ~as.numeric(as.character(YEAR)),
-          y = as.formula(paste0("~`", trait_col, "`")),
+          y = as.formula(paste0("~`", input$traitName, "`")),
           type = "scatter",
           mode = "lines+markers"
         ) %>%
           layout(
             xaxis = list(title = "Year"),
-            yaxis = list(title = trait_col),
-            title = paste("IG", input$selectedIG, "-", rv$traitName)
+            yaxis = list(title = input$traitName),
+            title = paste("IG", input$selectedIG, "-", input$traitName)
           )
       } else {
         plot_ly(
-          df,
+          rv$traitsData,
           x = ~YEAR,
-          y = as.formula(paste0("~`", trait_col, "`")),
+          y = as.formula(paste0("~`", input$traitName, "`")),
           type = "scatter",
           mode = "markers",
-          color = as.formula(paste0("~`", trait_col, "`"))
+          color = as.formula(paste0("~`", input$traitName, "`"))
         ) %>%
           layout(
             xaxis = list(title = "Year"),
             yaxis = list(title = "Trait category"),
-            title = paste("IG", input$selectedIG, "-", rv$traitName)
+            title = paste("IG", input$selectedIG, "-", input$traitName)
           )
       }
     })
@@ -1173,11 +1091,11 @@ function(input, output, session) {
       
       trait_filtered <- rv$traitsData %>%
         dplyr::filter(YEAR %in% input$years) %>%
-        dplyr::select(IG) %>%
+        dplyr::select(AccessionNumber) %>%
         distinct()
       
       missing_igs <- rv$datasetInput %>%
-        dplyr::filter(!IG %in% trait_filtered$IG)
+        dplyr::filter(!AccessionNumber %in% trait_filtered$AccessionNumber)
       
       return(missing_igs)
     })
@@ -1196,7 +1114,7 @@ function(input, output, session) {
     
     output$downloadMissing <- downloadHandler(
       filename <- function() {
-        paste0("Missing_", rv$crop, "_IGs_Trait_",  rv$field.name, "_", Sys.Date(), ".csv")
+        paste0("Missing_", rv$crop, "_IGs_Trait_",  input$traitName, "_", Sys.Date(), ".csv")
       },
       content <- function(file) {
         write.csv(missingData(), file, row.names = FALSE)
@@ -1210,12 +1128,12 @@ function(input, output, session) {
       percent <- round(n / total * 100, 2)
       
       div(class = "alert alert-info",
-          paste("There are", n, "accessions (", percent, "% ) with no ", rv$field.name," trait data."))
+          paste("There are", n, "accessions (", percent, "% ) with no ", input$traitName," trait data."))
     })
     
     output$downloadFiltered <- downloadHandler(
       filename <- function() {
-        paste0("Filtered_Trait_", rv$field.name, "_", rv$crop, "_", Sys.Date(), ".csv")
+        paste0("Filtered_Trait_", input$traitName, "_", rv$crop, "_", Sys.Date(), ".csv")
       },
       content <- function(file) {
         write.csv(filteredData(), file, row.names = FALSE)
@@ -1228,15 +1146,15 @@ function(input, output, session) {
       withProgress(message = "Calculating summary values ...", {
         if(rv$isTraitNum){
           rv$traitSummaryperAcc <- rv$traitsData %>% 
-                                      dplyr::group_by(IG) %>%
-                                      dplyr::summarise(across(rv$field.name, mean)) %>%
-                                      dplyr::mutate_at(rv$field.name, funs(round(., 2)))
+                                      dplyr::group_by(AccessionNumber) %>%
+                                      dplyr::summarise(across(input$traitName, mean)) %>%
+                                      dplyr::mutate_at(input$traitName, funs(round(., 2)))
         }
         
         else{
           rv$traitSummaryperAcc <- rv$traitsData %>%
-                                      dplyr::group_by(IG) %>%
-                                      dplyr::summarise(across(rv$field.name, max.frequency)) %>%
+                                      dplyr::group_by(AccessionNumber) %>%
+                                      dplyr::summarise(across(input$traitName, max.frequency)) %>%
                                       dplyr::mutate(across(where(is.character), as.factor))
         }
         
@@ -1259,37 +1177,42 @@ function(input, output, session) {
     })
     
     #map traits summary
-    #observe({
     output$traitMap <- leaflet::renderLeaflet({
-      #req(rv$traitSummary, rv$isTraitNum)
       filtered.traits.sum <- rv$traitSummaryperAcc[input$TraitDataSum_rows_all,]
       
       #merge rv$datasetInput and rv$traitSummary on IG
-      trait.coordinates <- merge(rv$datasetInput, filtered.traits.sum, by = "IG")
+      trait.coordinates <- merge(rv$datasetInput, filtered.traits.sum, by = "AccessionNumber")
+      traits_coords_clean <- trait.coordinates %>%
+        mutate(
+          Longitude = as.numeric(Longitude), 
+          Latitude = as.numeric(Latitude)
+        ) %>%
+        filter(!is.na(Longitude) & !is.na(Latitude))
       
+      print(nrow(traits_coords_clean))
       if(rv$isTraitNum){
         pal <- leaflet::colorBin(
           palette = c("#2d7436", "#ff8103"),
-          domain = trait.coordinates[[rv$field.name]],
+          domain = traits_coords_clean[[input$traitName]],
           bins = 6
         )
       }
       else{
         pal <- leaflet::colorFactor(
           palette = c("#2d7436", "#ff8103"),
-          domain = trait.coordinates[[rv$field.name]]
+          domain = traits_coords_clean[[input$traitName]]
         )
       }
       
-      leaflet::leaflet(data = trait.coordinates) %>% 
+      leaflet::leaflet(data = traits_coords_clean) %>% 
         leaflet::addTiles() %>%
         leaflet::addProviderTiles('Esri.WorldGrayCanvas')  %>%
         leaflet::addCircleMarkers(lng = ~Longitude, lat = ~Latitude,
                                   color = "black",
                                   radius = 3,
-                                  fillColor = ~pal(trait.coordinates[[rv$field.name]]),
-                                  label = ~trait.coordinates[[rv$field.name]],
+                                  fillColor = ~pal(traits_coords_clean[[input$traitName]]),
+                                  label = ~traits_coords_clean[[input$traitName]],
                                   fillOpacity = 0.7, stroke = TRUE, weight = 0.3) %>%
-        leaflet::addLegend(pal = pal, values = ~trait.coordinates[[rv$field.name]], opacity = 1,  title = rv$traitName)
+        leaflet::addLegend(pal = pal, values = ~traits_coords_clean[[input$traitName]], opacity = 1,  title = input$traitName)
     })
 }

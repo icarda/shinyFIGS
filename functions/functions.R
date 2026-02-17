@@ -141,10 +141,17 @@ extractWCdata <- function(sites, long, lat, var, res = 2.5){
 
 mapAccessions <- function(map, df, long, lat, y){
   
+  df_clean <- df %>%
+    dplyr::mutate(
+      lng = as.numeric(!!rlang::sym(long)), 
+      lat = as.numeric(!!rlang::sym(lat))
+    ) %>%
+    dplyr::filter(!is.na(lng) & !is.na(lat))
+  
   if(y == "None"){
     leaflet_map <- map %>% clearMarkers() %>%
       clearControls() %>% removeLayersControl() %>%
-      leaflet::addCircleMarkers(data = df, lng = df[[long]], lat = df[[lat]],
+      leaflet::addCircleMarkers(data = df_clean, lng = ~lng, lat = ~lat,
                        color = "#2d7436",
                        radius = 1.5,
                        fill = TRUE,
@@ -153,28 +160,28 @@ mapAccessions <- function(map, df, long, lat, y){
   }
   else {
     ## omit NAs in y column
-    df.na.omit <- df[!is.na(df[[y]]), ]
+    df.na.omit <- df_clean[!is.na(df_clean[[y]]), ]
 
-    if (is.numeric(df[[y]])){
+    if (is.numeric(df_clean[[y]])){
       pal <- leaflet::colorNumeric(
         palette = c("viridis"),
-        domain = df[[y]],
+        domain = df_clean[[y]],
         na.color = "#808080"
       )
     }
     else {
       pal <- leaflet::colorFactor(
         palette = c("viridis"),
-        domain = df[[y]],
+        domain = df_clean[[y]],
         na.color = "#808080"
       )
     }
-    
+    print(names(df.na.omit))
     leaflet_map <- map %>% clearMarkers() %>%
       clearControls() %>% removeLayersControl() %>%
       leaflet::addCircleMarkers(data = df.na.omit,
-                                lng = df.na.omit[[long]],
-                                lat = df.na.omit[[lat]],
+                                lng = ~lng,
+                                lat = ~lat,
                                 color = "black",
                                 radius = 1.5,
                                 fill = TRUE,
@@ -184,14 +191,14 @@ mapAccessions <- function(map, df, long, lat, y){
                                 fillOpacity = 1,
                                 weight = 0.1,
                                 group = "withoutNAs") %>%
-      leaflet::addCircleMarkers(data = df, lng = df[[long]], lat = df[[lat]],
+      leaflet::addCircleMarkers(data = df_clean, lng = ~lng, lat = ~lat,
                                 color = "black",
                                 radius = 1.5,
                                 fill = TRUE,
-                                fillColor = ~pal(df[[y]]),
-                                label = ~df[[y]],
+                                fillColor = ~pal(df_clean[[y]]),
+                                label = ~df_clean[[y]],
                                 fillOpacity = 1, stroke = TRUE, weight = 0.1, group = "withNAs") %>%
-      leaflet::addLegend("bottomright", pal = pal, values = df[[y]], opacity = 1,  title = y) %>%
+      leaflet::addLegend("bottomright", pal = pal, values = df_clean[[y]], opacity = 1,  title = y) %>%
       addLayersControl(baseGroups = c("withNAs","withoutNAs"),
                        options = layersControlOptions(collapsed = FALSE))
   }
@@ -226,9 +233,23 @@ search4pattern <- function(pattern, obj){
 #'
 
 map_two_dfs <- function(map, df1, df2, lng, lat, type){
-  df1$Aggregated <- "Overall Data"
-  df2$Aggregated <- type
-  d <- rbind(df1, df2)
+  df1_clean <- df1 %>%
+    dplyr::mutate(
+      lng = as.numeric(!!rlang::sym(lng)), 
+      lat = as.numeric(!!rlang::sym(lat))
+    ) %>%
+    dplyr::filter(!is.na(lng) & !is.na(lat))
+  
+  df2_clean <- df2 %>%
+    dplyr::mutate(
+      lng = as.numeric(!!rlang::sym(lng)), 
+      lat = as.numeric(!!rlang::sym(lat))
+    ) %>%
+    dplyr::filter(!is.na(lng) & !is.na(lat))
+  
+  df1_clean$Aggregated <- "Overall Data"
+  df2_clean$Aggregated <- type
+  d <- rbind(df1_clean, df2_clean)
   d_overall <- subset(d, Aggregated == "Overall Data")
   d_subset <- subset(d, Aggregated == type)
   
@@ -351,7 +372,7 @@ summaryPerYear <- function(df, accessions){
   summary_year <- df %>%
     dplyr::group_by(YEAR) %>%
     dplyr::summarise(
-      n_igs = dplyr::n_distinct(IG),
+      n_igs = dplyr::n_distinct(AccessionNumber),
       coverage = n_igs / nrow(accessions) * 100,
       .groups = "drop"
     )
@@ -365,9 +386,9 @@ summaryPerYear <- function(df, accessions){
 
 cummulativePerYear <- function(df, accessions){
   coverage_cum <- df %>%
-    dplyr::arrange(YEAR, IG) %>%
-    dplyr::distinct(YEAR, IG) %>%
-    dplyr::mutate(first_seen = !duplicated(IG)) %>%
+    dplyr::arrange(YEAR, AccessionNumber) %>%
+    dplyr::distinct(YEAR, AccessionNumber) %>%
+    dplyr::mutate(first_seen = !duplicated(AccessionNumber)) %>%
     dplyr::group_by(YEAR) %>%
     dplyr::summarise(new_igs = sum(first_seen), .groups = "drop") %>%
     dplyr::mutate(
@@ -398,17 +419,17 @@ cummulativePerYear <- function(df, accessions){
 
 # Numeric ----
 
-traitSummary <- function(df, ig_trait = NULL) {
-  trait <- names(df)[12]
-  safe_trait <- gsub("[^A-Za-z0-9]", "_", trait) #remove special characters
+traitSummary <- function(df, traitName, ig_trait = NULL) {
+  #trait <- names(df)[12]
+  safe_trait <- gsub("[^A-Za-z0-9]", "_", traitName) #remove special characters
   
   trait_summary <- df %>%
     dplyr::group_by(YEAR) %>%
     dplyr::summarise(
-      mean = mean(.data[[trait]], na.rm = TRUE),
-      sd  = sd(.data[[trait]], na.rm = TRUE),
-      min  = min(.data[[trait]], na.rm = TRUE),
-      max = max(.data[[trait]], na.rm = TRUE),
+      mean = mean(.data[[traitName]], na.rm = TRUE),
+      sd  = sd(.data[[traitName]], na.rm = TRUE),
+      min  = min(.data[[traitName]], na.rm = TRUE),
+      max = max(.data[[traitName]], na.rm = TRUE),
       .groups = "drop"
     )
   
@@ -425,8 +446,14 @@ traitSummary <- function(df, ig_trait = NULL) {
   )
   
   # Maximum outliers
-  maxOutliers <- df[df[[12]] > (mean(df[[12]]) + 3 * (sd(df[[12]]))), ]
-  maxOutliers <- maxOutliers %>% dplyr::select(c(1,2,3,4,5,12))
+  maxOutliers <- df[df[[traitName]] > (mean(df[[traitName]]) + 3 * (sd(df[[traitName]]))), ]
+  maxOutliers <- maxOutliers %>% dplyr::select(c('AccessionNumber',
+                                                 'YEAR',
+                                                 'EXPT',
+                                                 'PLOT',
+                                                 'PlantingDate',
+                                                 traitName
+                                                 ))
   
   maxOutliersTable <- htmltools::browsable(
     tagList(
@@ -441,8 +468,13 @@ traitSummary <- function(df, ig_trait = NULL) {
   )
 
   # Minimum outliers
-  minOutliers <- df[df[[12]] < (mean(df[[12]]) - 3 * (sd(df[[12]]))), ]
-  minOutliers <- minOutliers %>% dplyr::select(c(1,2,3,4,5,12))
+  minOutliers <- df[df[[traitName]] < (mean(df[[traitName]]) - 3 * (sd(df[[traitName]]))), ]
+  minOutliers <- minOutliers %>% dplyr::select(c('AccessionNumber',
+                                                 'YEAR',
+                                                 'EXPT',
+                                                 'PLOT',
+                                                 'PlantingDate',
+                                                 traitName))
   
   minOutliersTable <- htmltools::browsable(
     tagList(
@@ -457,26 +489,26 @@ traitSummary <- function(df, ig_trait = NULL) {
   )
   
   # Histogram of trait values
-  histPlot <- ggplot(df, aes(x = .data[[trait]])) +
+  histPlot <- ggplot(df, aes(x = .data[[traitName]])) +
     geom_histogram(fill = "lightblue", bins = 30, color = "black") +
-    geom_vline(aes(xintercept = mean(.data[[trait]], na.rm = TRUE)),
+    geom_vline(aes(xintercept = mean(.data[[traitName]], na.rm = TRUE)),
                color = "red", linewidth = 1, linetype = "dashed") +
-    geom_vline(aes(xintercept = median(.data[[trait]], na.rm = TRUE)),
+    geom_vline(aes(xintercept = median(.data[[traitName]], na.rm = TRUE)),
                color = "darkgreen", linewidth = 1, linetype = "dotdash") +
-    labs(title = paste("Distribution of", trait),
-         x = trait, y = "Count",
+    labs(title = paste("Distribution of", traitName),
+         x = traitName, y = "Count",
          caption = "Red = Mean | Green = Median") +
     theme_minimal()
   
   # Boxplot of trait values
-  boxPlot <- ggplot(df, aes(x = factor(YEAR), y = .data[[trait]])) +
+  boxPlot <- ggplot(df, aes(x = factor(YEAR), y = .data[[traitName]])) +
     geom_boxplot(fill = "lightgreen") +
-    geom_point(aes(text = paste("IG:", IG,
+    geom_point(aes(text = paste("IG:", AccessionNumber,
                                 "<br>Year:", YEAR,
-                                "<br>", trait, ":", .data[[trait]])),
+                                "<br>", traitName, ":", .data[[traitName]])),
                alpha = 0, size = 2, stroke = 0) +
-    labs(title = paste(trait, "Distribution by Year"),
-         x = "Year", y = trait) +
+    labs(title = paste(traitName, "Distribution by Year"),
+         x = "Year", y = traitName) +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
   
@@ -553,29 +585,29 @@ cummulativePerYearF <- function(df, accessions){
 }
 
 traitSummaryF <- function(df, traitName, factor_trait_info){
-  trait <- names(df)[12]
+  #trait <- names(df)[12]
   
   # Histogram of trait values
-  histPlot <- ggplot(df, aes(x = .data[[trait]])) +
+  histPlot <- ggplot(df, aes(x = .data[[traitName]])) +
     geom_bar(aes(text = after_stat(count)),
              fill = "#FFD580", color ="black") +
-    labs(title = paste("Distribution of", trait), x = paste(trait, "Category"), y = "Count") +
+    labs(title = paste("Distribution of", traitName), x = paste(traitName, "Category"), y = "Count") +
     theme_minimal()
   
   fctrs <- unlist(factor_trait_info$valid_options[factor_trait_info$Trait == traitName])
   
-  df$Value <- ifelse(map_lgl(str_split(df[[12]], pattern = "[;&]+"), 
+  df$Value <- ifelse(map_lgl(str_split(df[[traitName]], pattern = "[;&]+"), 
                               ~ all(str_trim(.x) %in% as.character(fctrs))),
                      "Available", "Not Available")
   
   # Dynamic color palette
-  max_colors <- length(levels(df[[12]]))
+  max_colors <- length(levels(df[[traitName]]))
   base_pal <- colorRampPalette(RColorBrewer::brewer.pal(12, "Set3"))
   extended_pal <- base_pal(max_colors)
   
   # Proportions by group
   # Create a df for proportions
-  var_sym <- rlang::sym(trait)
+  var_sym <- rlang::sym(traitName)
   
   df_props <- df %>%
     dplyr::count(YEAR, !!var_sym, Value, name = "count_segment") %>%
@@ -591,7 +623,7 @@ traitSummaryF <- function(df, traitName, factor_trait_info){
   
   propGroup <- ggplot(df_props, aes(x = factor(YEAR), 
                                     y = count_segment, 
-                                    fill = factor(.data[[trait]]))) +
+                                    fill = factor(.data[[traitName]]))) +
     geom_col(
       aes(
         text = tooltip_text,
@@ -604,12 +636,12 @@ traitSummaryF <- function(df, traitName, factor_trait_info){
     scale_color_manual(values = c("Not Available" = "black", "Available" = NA), guide = "none") +
     scale_linewidth_manual(values = c("Not Available" = 0.4, "Available" = 0), guide = "none") +
     scale_y_continuous(labels = scales::percent_format()) +
-    labs(title = paste(trait, "distribution by Year"), x = "Year", y = "Proportion", fill = trait) +
+    labs(title = paste(traitName, "distribution by Year"), x = "Year", y = "Proportion", fill = traitName) +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
   
   # Counts by group
-  countsGroup <- ggplot(df, aes(x = factor(YEAR), fill = factor(.data[[trait]]), 
+  countsGroup <- ggplot(df, aes(x = factor(YEAR), fill = factor(.data[[traitName]]), 
                                 color = Value, linewidth = Value)) +
     geom_bar( aes(text = after_stat(count)),
       position = position_dodge2(preserve = "single")) +
@@ -618,44 +650,12 @@ traitSummaryF <- function(df, traitName, factor_trait_info){
                        guide = "none") +
     scale_linewidth_manual(values = c("Not Available" = 0.4, "Available" = 0), 
                            guide = "none") +
-    labs(title = paste(trait, "counts by Year"), x = "Year", y = "Count", fill = trait) +
+    labs(title = paste(traitName, "counts by Year"), x = "Year", y = "Count", fill = traitName) +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
   
   return(list(histogram = ggplotly(histPlot, tooltip = c("x", "text")),
               proportionsByGroup = ggplotly(propGroup, tooltip = c("fill", "text")),
               countsByGroup = ggplotly(countsGroup, tooltip = c("fill", "text"))))
-}
-
-traitSummaryFFil <- function(df, traitNumber){
-  trait <- names(df)[12]
-  
-  # Histogram of trait values
-  histPlot <- ggplot(df, aes(x = .data[[trait]])) +
-    geom_bar(fill = "lightblue", color = "black") +
-    labs(title = paste("Distribution of", trait), x = "EGV category", y = "Count") +
-    theme_minimal()
-  
-  # Proportions by group
-  propGroup <- ggplot(df, aes(x = factor(YEAR), fill = factor(.data[[trait]]))) +
-    geom_bar(position = "fill") +
-    scale_fill_manual(values = RColorBrewer::brewer.pal(12, "Set3")) +
-    scale_y_continuous(labels = percent_format()) +
-    labs(title = paste(trait, " distribution by Year"), x = "Year", y = "Proportion", 
-         fill = trait) +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
-  
-  # Counts by group
-  countsGroup <- ggplot(df, aes(x = factor(YEAR), fill = factor(.data[[trait]]))) +
-    geom_bar(position = position_dodge2(preserve = "single")) +
-    scale_fill_manual(values = RColorBrewer::brewer.pal(12, "Set3")) +
-    labs(title = paste(trait, "counts by Year"), x = "Year", y = "Count", fill = trait) +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
-  
-  return(list(histogram = ggplotly(histPlot, tooltip = c("x")),
-              proportionsByGroup = ggplotly(propGroup, tooltip = c("fill")),
-              countsByGroup = ggplotly(countsGroup, tooltip = c("fill"))))
 }
 

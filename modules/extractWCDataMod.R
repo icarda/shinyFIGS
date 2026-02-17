@@ -16,6 +16,12 @@ extractWCDataMod <- function(input, output, session, rv){
     }
     else{
       df_cleaned <- rv$datasetInput %>%
+        dplyr::mutate(
+          !!rlang::sym(rv$lng) := as.numeric(!!rlang::sym(rv$lng)), 
+          !!rlang::sym(rv$lat) := as.numeric(!!rlang::sym(rv$lat))
+        ) %>%
+        dplyr::filter(!is.na(!!rlang::sym(rv$lng)) & !is.na(!!rlang::sym(rv$lat)))
+      df_cleaned <- df_cleaned %>%
         filter(PopulationType!="Genetic stock" & PopulationType!="Unreleased breeding material" & PopulationType!="Research material")
       withProgress(message = "Extracting World Clim Data ...", {
         WCdata <- extractWCdata(df_cleaned, long = rv$lng, lat = rv$lat, var = input$var)
