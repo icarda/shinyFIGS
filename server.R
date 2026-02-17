@@ -977,7 +977,16 @@ function(input, output, session) {
       
       df
     })
-    
+                          
+    # ---- Trait data by year for each IG ----
+    igYearData <- reactive({
+      req(rv$traitsData, input$selectedIG)
+      
+      rv$traitsData %>%
+        dplyr::filter(IG == input$selectedIG) %>%
+        dplyr::arrange(as.numeric(as.character(YEAR)))
+    })     
+                           
     # ---- Missing Data (IGs without trait records) ----
     missingData <- reactive({
       req(rv$traitsData)
