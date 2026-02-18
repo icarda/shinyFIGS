@@ -291,9 +291,8 @@ trait_accordions <- list(
   ),
   accordion_panel(
     value = "traitIGTimeline",
-    "IG Trajectory (Across the Years)",
-    uiOutput("igSelector"),
-    DTOutput("igYearTable"),
+    "Tracking Trait Variation across Years",
+    DT::dataTableOutput("igYearTable"),
     plotlyOutput("igYearPlot")
   ),
   accordion_panel(

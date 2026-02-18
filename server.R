@@ -887,30 +887,37 @@ function(input, output, session) {
                       ")))
     })
 
-    # ---------- Trait data per year for each IG ---------
-    
-    # ---- Trait data by year for each IG ----
-    igYearData <- reactive({
-      req(rv$traitsData, input$selectedIG)
+    # ---------- Pivoted Trait Data ---------
+    output$igYearTable <- DT::renderDataTable(server = FALSE, {
+      rv$df_pivoted <- rv$traitsData %>%
+        dplyr::select(AccessionNumber, YEAR, !!rlang::sym(input$traitName)) %>%
+        tidyr::pivot_wider(
+          names_from = YEAR,
+          values_from = !!rlang::sym(input$traitName)   
+        ) %>% 
+        dplyr::select(where(~ !all(is.na(.) | . == "")))
       
-      rv$traitsData %>%
-        dplyr::filter(IG == input$selectedIG) %>%
-        dplyr::arrange(as.numeric(as.character(YEAR)))
+      DT::datatable(rv$df_pivoted,
+                    selection = "single",
+                    rownames = FALSE,
+                    filter = list(position = "top", clear = FALSE),
+                    extensions = 'Buttons',
+                    options = list(dom = "Bfrtip",
+                                   pageLength = 10,
+                                   buttons = list(list(
+                                     extend = "collection",
+                                     buttons = list(
+                                       list(extend = 'csv', filename = paste0(rv$crop,"_",input$traitName,"_pivoted_data")),
+                                       list(extend = 'excel', filename = paste0(rv$crop,"_",input$traitName,"_pivoted_data"))),
+                                     text = 'Download')),
+                                   scrollX = TRUE))
     })
     
-    output$igYearTable <- renderDT({
-      req(igYearData())
-      
-      datatable(
-        igYearData() %>%
-          dplyr::select(YEAR, all_of(input$traitName)),
-        rownames = FALSE,
-        options = list(
-          pageLength = 10,
-          dom = "tip",
-          order = list(list(0, "asc"))
-        )
-      )
+    selected_accNumb <- reactive({
+      idx <- input$igYearTable_rows_all
+      req(idx)
+      accNumb <- rv$df_pivoted[idx, ][[1]]
+      return(accNumb)
     })
     
     # ---------- Outliers ---------
@@ -940,7 +947,6 @@ function(input, output, session) {
       if (rv$isTraitNum) {
         res$traitSummary
       }
-
     })
     
     output$outlierTables <- renderUI({
@@ -995,36 +1001,45 @@ function(input, output, session) {
     # ------ Plots -------
 
     output$igYearPlot <- renderPlotly({
-      req(igYearData())
-      
-      if (rv$isTraitNum) {
-        plot_ly(
-          igYearData(),
-          x = ~as.numeric(as.character(YEAR)),
-          y = as.formula(paste0("~`", input$traitName, "`")),
-          type = "scatter",
-          mode = "lines+markers"
-        ) %>%
-          layout(
-            xaxis = list(title = "Year"),
-            yaxis = list(title = input$traitName),
-            title = paste("IG", input$selectedIG, "-", input$traitName)
-          )
-      } else {
-        plot_ly(
-          rv$traitsData,
-          x = ~YEAR,
-          y = as.formula(paste0("~`", input$traitName, "`")),
-          type = "scatter",
-          mode = "markers",
-          color = as.formula(paste0("~`", input$traitName, "`"))
-        ) %>%
-          layout(
-            xaxis = list(title = "Year"),
-            yaxis = list(title = "Trait category"),
-            title = paste("IG", input$selectedIG, "-", input$traitName)
-          )
+      data <- rv$traitsData %>%
+        dplyr::select(AccessionNumber, YEAR, !!rlang::sym(input$traitName)) %>%
+        dplyr::mutate(
+          !!rlang::sym(input$traitName) := trimws(!!rlang::sym(input$traitName)),
+          YEAR = factor(YEAR),
+          AccessionNumber = factor(AccessionNumber),
+          PlotValue = if(rv$isTraitNum) as.numeric(!!rlang::sym(input$traitName)) else factor(!!rlang::sym(input$traitName))
+        )
+
+      plot_df <- data %>%
+        dplyr::filter(AccessionNumber %in% selected_accNumb())
+
+      if ((nrow(plot_df) == 0) || length(unique(plot_df$AccessionNumber)) > 10) {
+        return(NULL)
       }
+
+      unique_years <- sort(unique(plot_df$YearNum))
+
+      p <- ggplot(plot_df, aes(x = YEAR,
+                   y = PlotValue,
+                   color = as.character(!!rlang::sym(input$traitName)),
+                   text = paste(AccessionNumber,
+                                "<br>Year:", YEAR,
+                                "<br>Value:", !!rlang::sym(input$traitName)))) +
+        geom_jitter(alpha = 0.7,
+                    size = 2.5,
+                    width = 0.3,
+                    height = 0) +
+        geom_rug(sides = "l", alpha = 0.8, length = unit(0.03, "npc")) +
+        facet_wrap(~AccessionNumber, ncol = 1, scales = "free_y") +
+        scale_x_discrete() +
+        theme_minimal() +
+        labs(x = "YEAR", y = input$traitName, color = "Value") +
+        theme(panel.grid.major.x = element_blank(), legend.position = "none")
+
+      ggplotly(p, tooltip = "text") %>%
+        layout(
+          margin = list(l = 50, r = 50, b = 50, t = 80)
+        )
     })
     
     output$histPlot <- renderPlotly({
