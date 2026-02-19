@@ -347,7 +347,7 @@ sidebar_trait <- layout_sidebar(
     uiOutput("cropSelected"),
     actionButton("getTraits", "Get Traits Descriptors"),
     selectInput("IG.Trait",
-                "Select IG", 
+                "Select Accession Number Column", 
                 c("IG" = "")),
     selectInput("traitName",
                 "Select Trait",

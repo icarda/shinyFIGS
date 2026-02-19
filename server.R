@@ -696,7 +696,7 @@ function(input, output, session) {
     })
     
     observe({
-      updateSelectInput(session, "IG.Trait", label = "Select IG Column", choices = names(rv$datasetInput))
+      updateSelectInput(session, "IG.Trait", label = "Select Accession Number Column", choices = names(rv$datasetInput))
       updateSelectInput(session, "traitName", label = "Select Trait", choices = rv$traits[['Trait']])
     })
     
@@ -925,7 +925,6 @@ function(input, output, session) {
     # ---------- Generate summaries and plots -------------
     traitSummaryResult <- reactive({
       req(filteredData())
-      print(input$traitName)
       if (nrow(filteredData()) == 0) return(NULL)
       
       if (rv$isTraitNum) {
@@ -972,7 +971,6 @@ function(input, output, session) {
       if (!rv$isTraitNum) {
         
         valid_opts <- unlist(rv$factor_trait_info$valid_options[rv$factor_trait_info$Trait == input$traitName])
-        print(valid_opts)
         df <- filteredData()
         
         invalid_rows <- df %>%
@@ -998,9 +996,22 @@ function(input, output, session) {
       }
     })
     
-    # ------ Plots -------
+    # ------ Track Trait Variation Plot -------
 
     output$igYearPlot <- renderPlotly({
+      
+      # Display a message if no IG is selected
+      if (is.null(selected_accNumb()) || length(selected_accNumb()) > 10) {
+        
+        p_empty <- ggplot() +
+          ggplot2::annotate("text", x = 0, y = 0, 
+                   label = "Use search box or filter the 'AccessionNumber' column in the table above to see the variation plot.\nDo not exceed 5 accession numbers!",
+                   size = 5, color = "#ff8103", fontface = "italic") +
+          ggplot2::theme_void()
+        
+        return(plotly::ggplotly(p_empty) %>% plotly::config(displayModeBar = FALSE))
+      }
+
       data <- rv$traitsData %>%
         dplyr::select(AccessionNumber, YEAR, !!rlang::sym(input$traitName)) %>%
         dplyr::mutate(
@@ -1013,30 +1024,30 @@ function(input, output, session) {
       plot_df <- data %>%
         dplyr::filter(AccessionNumber %in% selected_accNumb())
 
-      if ((nrow(plot_df) == 0) || length(unique(plot_df$AccessionNumber)) > 10) {
+      if(nrow(plot_df) == 0){
         return(NULL)
       }
 
       unique_years <- sort(unique(plot_df$YearNum))
 
-      p <- ggplot(plot_df, aes(x = YEAR,
+      p <- ggplot2::ggplot(plot_df, aes(x = YEAR,
                    y = PlotValue,
                    color = as.character(!!rlang::sym(input$traitName)),
                    text = paste(AccessionNumber,
                                 "<br>Year:", YEAR,
                                 "<br>Value:", !!rlang::sym(input$traitName)))) +
-        geom_jitter(alpha = 0.7,
+        ggplot2::geom_jitter(alpha = 0.7,
                     size = 2.5,
                     width = 0.3,
                     height = 0) +
-        geom_rug(sides = "l", alpha = 0.8, length = unit(0.03, "npc")) +
-        facet_wrap(~AccessionNumber, ncol = 1, scales = "free_y") +
-        scale_x_discrete() +
-        theme_minimal() +
-        labs(x = "YEAR", y = input$traitName, color = "Value") +
-        theme(panel.grid.major.x = element_blank(), legend.position = "none")
+        ggplot2::geom_rug(sides = "l", alpha = 0.8, length = unit(0.03, "npc")) +
+        ggplot2::facet_wrap(~AccessionNumber, ncol = 1, scales = "free_y") +
+        ggplot2::scale_x_discrete() +
+        ggplot2::theme_minimal() +
+        ggplot2::labs(x = "YEAR", y = input$traitName, color = "Value") +
+        ggplot2::theme(panel.grid.major.x = element_blank(), legend.position = "none")
 
-      ggplotly(p, tooltip = "text") %>%
+      plotly::ggplotly(p, tooltip = "text") %>%
         layout(
           margin = list(l = 50, r = 50, b = 50, t = 80)
         )
@@ -1204,7 +1215,6 @@ function(input, output, session) {
         ) %>%
         filter(!is.na(Longitude) & !is.na(Latitude))
       
-      print(nrow(traits_coords_clean))
       if(rv$isTraitNum){
         pal <- leaflet::colorBin(
           palette = c("#2d7436", "#ff8103"),

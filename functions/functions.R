@@ -176,7 +176,7 @@ mapAccessions <- function(map, df, long, lat, y){
         na.color = "#808080"
       )
     }
-    print(names(df.na.omit))
+    
     leaflet_map <- map %>% clearMarkers() %>%
       clearControls() %>% removeLayersControl() %>%
       leaflet::addCircleMarkers(data = df.na.omit,
