@@ -24,7 +24,7 @@ extractWCDataMod <- function(input, output, session, rv){
       df_cleaned <- df_cleaned %>%
         filter(PopulationType!="Genetic stock" & PopulationType!="Unreleased breeding material" & PopulationType!="Research material")
       withProgress(message = "Extracting World Clim Data ...", {
-        WCdata <- extractWCdata(df_cleaned, long = rv$lng, lat = rv$lat, var = input$var)
+        WCdata <- icardaFIGSr::extractWCdata(df_cleaned, long = rv$lng, lat = rv$lat, var = input$var, res = 2.5)
       })
       return(WCdata)
     }
