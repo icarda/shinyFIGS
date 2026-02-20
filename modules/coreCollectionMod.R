@@ -59,7 +59,7 @@ coreCollectionMod <- function(input, output, session, rv){
 
     withProgress(message = "Developing Core Collection ...", {
       tryCatch({
-        res_df <- ccChooser::stratcc(x = data4core_sub_na_omit,
+        res_df <- stratcc(x = data4core_sub_na_omit,
                                    groups = data4core_sub_na_omit[[group]],
                                    alloc = alloc,
                                    fraction = fraction,

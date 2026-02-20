@@ -15,6 +15,7 @@ source(file.path('./functions/functions.R'), local = TRUE)
 for (f in list.files('./modules')) {
   source(file.path('modules', f), local = TRUE)
 }
+source(file.path('./utils/stratcc_fixed.R'), local = TRUE)
 
 
 crops <- getCrops()
