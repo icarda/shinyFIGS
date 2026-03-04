@@ -537,3 +537,109 @@ traitSummaryF <- function(df, traitName, factor_trait_info){
               countsByGroup = ggplotly(countsGroup, tooltip = c("fill", "text"))))
 }
 
+# Passport completeness ----
+has_val <- function(x) !is.na(x) & as.character(x) != ""
+
+pdci_pop_group <- function(x){
+  dplyr::case_when(
+    x %in% c("Wild","Weedy") ~ "wild",
+    x %in% c("Landrace") ~ "landrace",
+    x %in% c("Genetic stock","Research material","Unreleased breeding material") ~ "breeding",
+    x %in% c("Cultivar") ~ "cultivar",
+    TRUE ~ "other"
+  )
+}
+
+pdci_from_columns <- function(df){
+  get <- function(nm) if (nm %in% names(df)) df[[nm]] else rep(NA, nrow(df))
+  
+  IG  <- get("AccessionNumber")
+  Crop <- get("CropName")
+  Country <- get("CountryOfOrigin")
+  Pop <- get("PopulationType")
+  Taxon <- get("TaxonName")
+  Lat <- get("Latitude")
+  Lon <- get("Longitude")
+  Alt <- get("Altitude")
+  CollYear <- get("CollectingYear")
+  
+  # site description proxy (D14/COLLSITE, D29/COLLDESCR proxy-ish)
+  Site <- has_val(get("Site")) | has_val(get("SiteCode")) | has_val(get("Province")) | has_val(get("Admin1stLevel"))
+  
+  popg <- pdci_pop_group(Pop)
+  coord_pair <- has_val(Lat) & has_val(Lon)
+  
+  score <- rep(0, nrow(df))
+  
+  # Independent of population type
+  # D05 GENUS + D06 SPECIES
+  # Taxon present -> genus + species present
+  score <- score + ifelse(has_val(Taxon), 120 + 80, 0)
+  
+  # D10 CROPNAME
+  score <- score + ifelse(has_val(Crop), 45, 0)
+  
+  # D20 SAMPSTAT
+  score <- score + ifelse(has_val(Pop), 80, 0)
+  
+  # Depending on population type
+  # D13 ORIGCTY
+  score <- score + ifelse(
+    has_val(Country),
+    ifelse(popg %in% c("wild","landrace"), 80, 40),
+    0
+  )
+  
+  # D14 COLLSITE (including missing coords)
+  score <- score + ifelse(
+    Site,
+    dplyr::case_when(
+      popg == "wild" & !coord_pair ~ 70,
+      popg == "wild" ~ 20,
+      popg == "landrace" & !coord_pair ~ 45,
+      popg == "landrace" ~ 15,
+      popg == "other" & !coord_pair ~ 20,
+      popg == "other" ~ 10,
+      TRUE ~ 0
+    ),
+    0 # cultivar is 0
+  )
+  
+  # D15 + D16 LAT/LON (both must be present)
+  score <- score + ifelse(
+    coord_pair,
+    dplyr::case_when(
+      popg == "wild" ~ 60 + 60,
+      popg == "landrace" ~ 40 + 40,
+      popg == "other" ~ 15 + 15,
+      TRUE ~ 0
+    ),
+    0 # cultivar is 0
+  )
+  
+  # D17 ELEVATION
+  score <- score + ifelse(
+    has_val(Alt),
+    dplyr::case_when(
+      popg == "wild"     ~ 20,
+      popg == "landrace" ~ 15,
+      popg == "other"    ~ 5,
+      TRUE ~ 0
+    ),
+    0
+  )
+  
+  # D18 COLLDATE (CollectionYear)
+  score <- score + ifelse(
+    has_val(CollYear),
+    dplyr::case_when(
+      popg %in% c("wild","landrace") ~ 30,
+      popg == "other" ~ 10,
+      TRUE ~ 0
+    ),
+    0
+  )
+  
+  # Final PDCI: sum / 100
+  round(score / 100, 2)
+}

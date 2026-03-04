@@ -288,6 +288,194 @@ function(input, output, session) {
     contentType = "text/csv"
   )
 
+  # ----- Metric glossary -----
+  metric_glossary <- dplyr::tibble(
+    Metric = c(
+      "NACC",
+      "NACC_PW",
+      "NACC_PWe",
+      "NACC_PC",
+      "NACC_PL",
+      "NACC_PB",
+      "NACC_PA",
+      "NACC_PUnknown ",
+      "NACC_ON",
+      "DOC_DOI"),
+    Meaning = c(
+      "Number of accessions",
+      "Number of accessions of wild populations",
+      "Number of accessions of weedy populations",
+      "Number of accessions of traditional cultivars",
+      "Number of accessions of landraces",
+      "Number of accessions of breeding material",
+      "Number of accessions of advanced or improved cultivars",
+      "Number of accessions of unknown material",
+      "Number of accessions originating in the genebank host country (Morocco)",
+      "Number of accesions with a DOI"
+    )
+  )
+  
+  output$metricsGlossary <- reactable::renderReactable({
+    reactable::reactable(
+      metric_glossary,
+      searchable = FALSE,
+      filterable  = FALSE,
+      defaultPageSize = 10,
+      columns = list(
+        Metric  = reactable::colDef(minWidth = 120),
+        Meaning = reactable::colDef(minWidth = 520)
+      )
+    )
+  })
+  
+  # ----- Metrics -----
+  # Metrics per crop
+  passport_df_for_metrics <- reactive({
+    if (input$dataSrc == "byCrop") {
+      req(datasetInputCrop())
+      datasetInputCrop()
+    } else {
+      req(rv$datasetInput)
+      rv$datasetInput
+    }
+  })
+  
+  passport_with_pdci <- reactive({
+    df <- passport_df_for_metrics()
+    req(df)
+    
+    if (!("PopulationType" %in% names(df))) df$PopulationType <- NA
+    if (!("TaxonName" %in% names(df))) df$TaxonName <- NA
+    if (!("CropName" %in% names(df))) df$CropName <- NA
+    if (!("CountryOfOrigin" %in% names(df))) df$CountryOfOrigin <- NA
+    
+    df$PDCI <- pdci_from_columns(df)
+    df
+  })
+  
+  metrics_pop_by_crop_long <- reactive({
+    df <- passport_df_for_metrics()
+    req(df)
+    
+    validate(
+      need("AccessionNumber" %in% names(df), "Missing required column: AccessionNumber"),
+      need("PopulationType" %in% names(df), "Missing required column: PopulationType"),
+      need("CropName" %in% names(df), "Missing required column: CropName")
+    )
+    
+    wide <- df %>%
+      dplyr::mutate(
+        pop_group = dplyr::case_when(
+          PopulationType %in% c("Wild") ~ "PW",
+          PopulationType %in% c("Weedy") ~ "PWe",
+          PopulationType %in% c("Cultivar") ~ "PC",
+          PopulationType %in% c("Landrace") ~ "PL",
+          PopulationType %in% c("Genetic stock", "Research material", "Unreleased breeding material") ~ "PB",
+          PopulationType %in% c("Advanced cultivar") ~ "PA",
+          TRUE ~ "Unknown"
+        )
+      ) %>%
+      dplyr::group_by(CropName) %>%
+      dplyr::summarise(
+        NACC = dplyr::n_distinct(AccessionNumber),
+        NACC_PW = dplyr::n_distinct(AccessionNumber[pop_group == "PW"]),
+        NACC_PWe = dplyr::n_distinct(AccessionNumber[pop_group == "PWe"]),
+        NACC_PC = dplyr::n_distinct(AccessionNumber[pop_group == "PC"]),
+        NACC_PL = dplyr::n_distinct(AccessionNumber[pop_group == "PL"]),
+        NACC_PB = dplyr::n_distinct(AccessionNumber[pop_group == "PB"]),
+        NACC_PA = dplyr::n_distinct(AccessionNumber[pop_group == "PA"]),
+        NACC_Unknown = dplyr::n_distinct(AccessionNumber[pop_group == "Unknown"]),
+        NACC_ON = dplyr::n_distinct(AccessionNumber[CountryOfOrigin == "MAR"],),
+        DOC_DOI = dplyr::n_distinct(AccessionNumber[!is.na(DOI) & DOI != ""])
+      )
+    
+    long <- stats::reshape(
+      wide,
+      varying = names(wide)[names(wide) != "CropName"],
+      v.names = "Value",
+      timevar = "Metric",
+      times = names(wide)[names(wide) != "CropName"],
+      direction = "long"
+    )
+    
+    long <- long[order(long$CropName, match(long$Metric,
+                                        c("NACC","NACC_PW","NACC_PWe", "NACC_PC", "NACC_PL","NACC_PB",
+                                          "NACC_PA","NACC_Unknown","NACC_ON", "DOC_DOI"))), ]
+    rownames(long) <- NULL
+    long
+  })
+  
+  output$metricsTable <- DT::renderDataTable({
+    dfm <- metrics_pop_by_crop_long()
+    DT::datatable(
+      dfm[, c("CropName", "Metric", "Value")],
+      rownames = FALSE,
+      options = list(pageLength = 25, scrollX = TRUE)
+    )
+  })
+  
+  pdci_summary_by_crop <- reactive({
+    df <- passport_with_pdci()
+    req(df)
+    
+    df %>%
+      dplyr::group_by(CropName) %>%
+      dplyr::summarise(
+        NACC = dplyr::n_distinct(AccessionNumber),
+        PDCI_mean = round(mean(PDCI, na.rm = TRUE), 2),
+        PDCI_median = round(stats::median(PDCI, na.rm = TRUE), 2),
+        PDCI_max = round(max(PDCI, na.rm = TRUE), 2),
+        PDCI_min = round(min(PDCI, na.rm = TRUE), 2),
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(desc(PDCI_mean))
+  })
+  
+  output$pdciSummaryTable <- DT::renderDataTable({
+    DT::datatable(
+      pdci_summary_by_crop(),
+      rownames = FALSE,
+      options = list(pageLength = 10, scrollX = TRUE)
+    )
+  })
+  
+  
+  # Number of accessions added per year
+  acc_added_per_year <- reactive({
+    df <- passport_df_for_metrics()
+    req(df)
+    
+    validate(
+      need("AccessionNumber" %in% names(df), "Missing required column: AccessionNumber"),
+      need("CollectingYear" %in% names(df), "Missing required column: CollectingYear")
+    )
+    
+    df %>%
+      dplyr::mutate(
+        CollectingYear = readr::parse_number(as.character(CollectingYear))
+      ) %>%
+      dplyr::filter(!is.na(CollectingYear)) %>%
+      dplyr::group_by(CollectingYear) %>%
+      dplyr::summarise(
+        NACC_NEW = dplyr::n_distinct(AccessionNumber),
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(CollectingYear)
+    
+  })
+  
+  output$accAddedPerYearTable <- DT::renderDataTable({
+    DT::datatable(
+      acc_added_per_year(),
+      rownames = FALSE,
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE,
+        dom = "tip"
+      )
+    )
+  })
+
   ########################################################
   ############  Extracting World Clim Data   #############
   ########################################################

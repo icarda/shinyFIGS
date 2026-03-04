@@ -40,6 +40,26 @@ passport_accordions <- list(
     DT::dataTableOutput('table')
   ),
   accordion_panel(
+    value = "accMetrics",
+    "Metrics",
+    tags$div(
+      style = "margin-bottom: 12px;",
+      tags$p(tags$strong("Metric definitions")),
+      reactable::reactableOutput("metricsGlossary")
+    ),
+    tags$h4("Accession metrics"),
+    DT::dataTableOutput("metricsTable"),
+    
+    tags$hr(),
+    
+    tags$h4("Accessions added per year"),
+    DT::dataTableOutput("accAddedPerYearTable"),
+    
+    tags$hr(),
+    tags$h4("Passport completeness (PDCI)"),
+    DT::dataTableOutput("pdciSummaryTable")
+  ),
+  accordion_panel(
     "Map",
     uiOutput('selectUI_1'),
     leaflet::leafletOutput(outputId = "map")
