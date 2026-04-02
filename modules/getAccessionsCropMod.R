@@ -5,7 +5,7 @@ getAccessionsCropUI <- function(id){
     selectInput(ns("ori"), "Select country(ies)", multiple = TRUE, choices = c("Countries" = "", countries[1]), selected = ""),
     checkboxInput(ns("avail"), "Get available accessions", value = TRUE),
     checkboxInput(ns("coor"), "Get georeferenced accessions", value = TRUE),
-    checkboxInput(ns("doi"), "Include DOIs", value = FALSE),
+    #checkboxInput(ns("doi"), "Include DOIs", value = FALSE),
     checkboxInput(ns("other_id"), "Include other IDs", value = FALSE)
   )
 }
@@ -18,7 +18,7 @@ getAccessionsCropMod <- function(input, output, session, rv){
     countryName <- input$ori
     crop <- input$crop
     coor <- input$coor
-    doi <- input$doi
+    #doi <- input$doi
     available <- input$avail
     other_id <- input$other_id
     rv$countryCode <- countryCode(countryName = countryName)
@@ -27,8 +27,7 @@ getAccessionsCropMod <- function(input, output, session, rv){
       # query ICARDA database
       withProgress(message = "Querying ICARDA GRS DB ...", {
         df <- icardaFIGSr::getAccessions(crop = crop, ori = rv$countryCode, 
-                                         coor = coor, doi = doi, taxon = TRUE, 
-                                         collectionYear = TRUE, available = available,
+                                         coor = coor, available = available,
                                          other_id = other_id)
       })
       

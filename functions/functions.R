@@ -19,12 +19,17 @@ getCrops <- function() {
 
 mapAccessions <- function(map, df, long, lat, y){
   
+  shiny::req(df)
+  if(nrow(df) == 0) return(map)
+  
   df_clean <- df %>%
     dplyr::mutate(
       lng = as.numeric(!!rlang::sym(long)), 
       lat = as.numeric(!!rlang::sym(lat))
     ) %>%
     dplyr::filter(!is.na(lng) & !is.na(lat))
+  
+  if(nrow(df_clean) == 0) return(map)
   
   if(y == "None"){
     leaflet_map <- map %>% clearMarkers() %>%
@@ -536,4 +541,3 @@ traitSummaryF <- function(df, traitName, factor_trait_info){
               proportionsByGroup = ggplotly(propGroup, tooltip = c("fill", "text")),
               countsByGroup = ggplotly(countsGroup, tooltip = c("fill", "text"))))
 }
-

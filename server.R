@@ -83,6 +83,7 @@ function(input, output, session) {
   )
   
   outputOptions(output, "map", suspendWhenHidden = FALSE)
+  outputOptions(output, "WCMap", suspendWhenHidden = FALSE)
   outputOptions(output, "subsetMap", suspendWhenHidden = FALSE)
   outputOptions(output, "coreMap", suspendWhenHidden = FALSE)
   outputOptions(output, "geoMap", suspendWhenHidden = FALSE)
@@ -318,6 +319,7 @@ function(input, output, session) {
   })
 
   observe({
+    req(input$climData_accd == "climDataMap")
     req(rv$lng, rv$lat, climaticData(), input$clim_var)
     mapAccessions(WCMap, df = climaticData(), long = rv$lng, lat = rv$lat, y = input$clim_var)
   })
@@ -1003,10 +1005,10 @@ function(input, output, session) {
       
       # Display a message if no IG is selected
       if (is.null(selected_accNumb()) || length(selected_accNumb()) > 10) {
-        
+        msg <- "Use search box or filter the 'AccessionNumber' column in the table above to see the variation plot. Do not exceed 5 accession numbers!"
         p_empty <- ggplot() +
           ggplot2::annotate("text", x = 0, y = 0, 
-                   label = "Use search box or filter the 'AccessionNumber' column in the table above to see the variation plot.\nDo not exceed 5 accession numbers!",
+                   label = stringr::str_wrap(msg, width = 40),
                    size = 5, color = "#ff8103", fontface = "italic") +
           ggplot2::theme_void()
         
